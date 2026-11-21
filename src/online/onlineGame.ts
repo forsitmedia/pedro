@@ -1,6 +1,6 @@
 import type { Action, GameState } from '../engine/types';
 import type { GameConnection } from '../game/connection';
-import type { ClientMsg, RoomInfo, RoomSettings, ServerMsg } from './protocol';
+import type { ClientMsg, RoomInfo, RoomSettings, ServerMsg, Visibility } from './protocol';
 
 export type ConnStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -44,12 +44,19 @@ export class OnlineGame implements GameConnection {
   private closedByUs = false;
   private readonly token: string;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Waiting for the host of a private table to let us in. */
+  knocking = false;
   /** Bumps on every change, for React. */
   version = 0;
 
   constructor(
     readonly code: string,
     private name: string,
+    private avatar?: string,
+    /** How a new table is opened (ignored if the table already exists). */
+    private mode?: Visibility,
+    /** Secret from a private invite link. */
+    private key?: string,
   ) {
     this.token = tokenFor(code);
     this.connect();
@@ -64,6 +71,12 @@ export class OnlineGame implements GameConnection {
     this.retry = 0;
     this.connect();
   };
+
+  /** The link to send to friends (private tables carry their key). */
+  get inviteLink() {
+    const k = this.room?.visibility === 'private' && this.key ? `?k=${encodeURIComponent(this.key)}` : '';
+    return `${location.origin}/r/${this.code}${k}`;
+  }
 
   get showLog() {
     return this.room?.settings.showLog ?? true;
@@ -94,8 +107,12 @@ export class OnlineGame implements GameConnection {
     return null;
   };
 
-  updateSettings(settings: RoomSettings) {
-    this.send({ t: 'settings', settings });
+  updateSettings(settings: RoomSettings, visibility?: Visibility) {
+    this.send({ t: 'settings', settings, visibility });
+  }
+  /** Host: let someone in (or not). */
+  admit(id: string, ok: boolean) {
+    this.send({ t: 'admit', id, ok });
   }
   start() {
     this.send({ t: 'start' });
@@ -132,7 +149,16 @@ export class OnlineGame implements GameConnection {
     ws.onopen = () => {
       this.retry = 0;
       this.status = 'open';
-      ws.send(JSON.stringify({ t: 'hello', name: this.name, token: this.token } satisfies ClientMsg));
+      ws.send(
+        JSON.stringify({
+          t: 'hello',
+          name: this.name,
+          token: this.token,
+          avatar: this.avatar,
+          mode: this.mode,
+          key: this.key,
+        } satisfies ClientMsg),
+      );
       this.emit();
     };
     ws.onmessage = (ev) => {
@@ -142,8 +168,13 @@ export class OnlineGame implements GameConnection {
       } catch {
         return;
       }
-      if (msg.t === 'room') {
+      if (msg.t === 'knocking') {
+        this.knocking = true;
+      } else if (msg.t === 'room') {
+        this.knocking = false;
         this.room = msg.room;
+        // Seated at a private table: remember its key so the invite link (and refresh) work.
+        if (msg.room.key) this.key = msg.room.key;
         this.meId = msg.you;
         if (!msg.room.started) {
           this.state = null;

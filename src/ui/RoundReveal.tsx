@@ -6,6 +6,9 @@ import { CardView } from './CardView';
 import { usePrefs } from './prefs';
 import { play } from './sound';
 import { gridPos } from './layout';
+import { Icon } from './art/Icon';
+import { Avatar, avatarFor } from './art/Avatar';
+import { recordRound } from './profile';
 
 /**
  * End of a round, like at a real table: everyone turns their cards over one by one
@@ -27,7 +30,10 @@ export function RoundReveal({
   onNext,
   onRestart,
   onExit,
+  deadline,
 }: {
+  /** Seconds before the next round starts on its own. */
+  deadline: number | null;
   s: GameState;
   meId: string;
   restartLabel: string;
@@ -83,6 +89,7 @@ export function RoundReveal({
   const flipped = (player: number, card: number) =>
     steps.slice(0, done).some((x) => x.kind === 'flip' && ((x.player === player && x.card >= card) || x.player > player));
 
+  const waitingFor = s.players.filter((p) => !p.isBot && !s.nextReady?.[p.id] && p.id !== meId).map((p) => p.name);
   const roundScore = (r: RoundResult) => r.sum + r.penalty;
   const bestRound = Math.min(...results.map(roundScore));
   const roundWinners = results.filter((r) => roundScore(r) === bestRound);
@@ -92,6 +99,20 @@ export function RoundReveal({
   const stage = reached('table') ? 'table' : reached('champion') ? 'champion' : reached('winner') ? 'winner' : 'reveal';
   // Skip the suspense: straight to the cup (game over) or to the scores.
   const toTable = () => setDone(steps.length);
+
+  // Your lifetime stats (kept on this device).
+  useEffect(() => {
+    const mine = results.find((r) => r.playerId === meId);
+    if (!mine) return;
+    recordRound(`${meId}:${s.round}:${s.players.map((p) => p.total).join(',')}`, {
+      score: roundScore(mine),
+      wonRound: roundScore(mine) === bestRound,
+      calledPedro: !!caller && caller.playerId === meId,
+      pedroOk: !!caller && caller.playerId === meId && !pedroFailed,
+      gameOver: over,
+      wonGame: over && champions.some((p) => p.id === meId),
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** A player's hand exactly as it lay on the table (same spots, gaps included), flipped one card at a time. */
   const seat = (playerId: string) => {
@@ -114,7 +135,8 @@ export function RoundReveal({
         style={{ '--cols': cols, ...(cols > 3 ? { '--cw': `calc(var(--base-cw) * ${3 / cols})` } : {}) } as CSSProperties}
       >
         <div className="reveal-name">
-          {isWinner && <span aria-hidden>👑</span>}
+          {isWinner && <Icon name="crown" size="1.1em" />}
+          <Avatar code={avatarFor(p)} size="1.6em" />
           {nameOf(playerId)}
           {isCaller && <span className="badge badge--pedro">called Pedro</span>}
         </div>
@@ -166,6 +188,11 @@ export function RoundReveal({
       {stage === 'winner' && (
         <button className="reveal-splash" onClick={() => setDone(steps.findIndex((x) => x.kind === 'winner') + 1)}>
           <span className="reveal-splash-kicker">Round {s.round} winner</span>
+          <span className="splash-avatars">
+            {roundWinners.map((r) => (
+              <Avatar key={r.playerId} code={avatarFor(getPlayer(s, r.playerId) ?? { name: '' })} size="100%" />
+            ))}
+          </span>
           <span className="reveal-splash-name">{roundWinners.map((r) => nameOf(r.playerId)).join(' & ')}</span>
           <span className="reveal-splash-sub">
             with {bestRound} point{Math.abs(bestRound) === 1 ? '' : 's'}
@@ -194,7 +221,8 @@ export function RoundReveal({
           </span>
           <span className="reveal-splash-kicker">The Pedro Championship</span>
           <span className="reveal-cup" aria-hidden>
-            🏆
+            <Icon name="trophy" size="100%" />
+            {champions[0] && <Avatar code={avatarFor(champions[0])} size="42%" className="cup-avatar" />}
           </span>
           <span className="reveal-splash-name">{champions.map((p) => nameOf(p.id)).join(' & ')}</span>
           <span className="reveal-splash-sub">
@@ -206,14 +234,17 @@ export function RoundReveal({
 
       {stage === 'table' && (
         <div className="standings">
-          <h2>{over ? `🏆 ${champions.map((p) => nameOf(p.id)).join(' & ')} — Pedro champion${champions.length > 1 ? 's' : ''}!` : `After round ${s.round}`}</h2>
+          <h2>{over ? <><Icon name="trophy" size="1.2em" /> {champions.map((p) => nameOf(p.id)).join(' & ')} — Pedro champion{champions.length > 1 ? 's' : ''}!</> : `After round ${s.round}`}</h2>
           <div className="standings-list">
             {[...results]
               .sort((a, b) => a.total - b.total)
               .map((r, place) => (
                 <div key={r.playerId} className={`standings-row ${r.playerId === meId ? 'is-me' : ''} ${roundScore(r) === bestRound ? 'is-best' : ''}`}>
-                  <span className="standings-place">{over && place === 0 ? '🏆' : place + 1}</span>
-                  <span className="standings-name">{nameOf(r.playerId)}</span>
+                  <span className="standings-place">{over && place === 0 ? <Icon name="trophy" size="1.3em" /> : place + 1}</span>
+                  <Avatar code={avatarFor(getPlayer(s, r.playerId) ?? { name: '' })} size="1.8em" />
+                  <span className="standings-name">
+                    {nameOf(r.playerId)} {roundScore(r) === bestRound && <Icon name="crown" size="1em" />}
+                  </span>
                   <span className="standings-cards">
                     {r.cards.length
                       ? r.cards.map((c) => (
@@ -242,10 +273,18 @@ export function RoundReveal({
                   Menu
                 </button>
               </>
+            ) : s.nextReady?.[meId] ? (
+              <p className="standings-wait">
+                ✓ You're ready — waiting for {waitingFor.join(', ')}
+                {deadline !== null && ` · next round in ${deadline}s`}
+              </p>
             ) : (
-              <button className="btn btn--primary" onClick={onNext}>
-                Next round
-              </button>
+              <>
+                <button className="btn btn--primary" onClick={onNext}>
+                  Ready for the next round
+                </button>
+                {deadline !== null && <p className="standings-wait">Starts on its own in {deadline}s</p>}
+              </>
             )}
           </div>
         </div>

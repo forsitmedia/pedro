@@ -11,9 +11,15 @@
     "run_worker_first": ["/api/*"]
   },
   "durable_objects": {
-    "bindings": [{ "name": "ROOMS", "class_name": "PedroRoom" }]
+    "bindings": [
+      { "name": "ROOMS", "class_name": "PedroRoom" },
+      { "name": "LOBBY", "class_name": "PedroLobby" }
+    ]
   },
   // SQLite-backed Durable Objects are the ones included in the free plan.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PedroRoom"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PedroRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["PedroLobby"] }
+  ],
   "observability": { "enabled": true }
 }

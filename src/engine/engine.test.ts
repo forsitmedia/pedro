@@ -111,6 +111,18 @@ describe('throwing matching cards', () => {
     expect(s.known.a).toContain('nine');
   });
 
+  it('a red King matches a black King (K is K): burned, no penalty for the thrower', () => {
+    let s = started();
+    s.deck.push(card(13, 'S', 'blackK'));
+    s = act(act(s, { type: 'DRAW', playerId: 'a' }), { type: 'DISCARD', playerId: 'a' });
+    s.players[1].hand[0] = card(13, 'H', 'redK');
+    const before = handCount(s.players[1]);
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 0 } });
+    expect(s.events.at(-1)?.kind).toBe('snap');
+    expect(handCount(s.players[1])).toBe(before - 1);
+    expect(s.events.some((e) => e.kind === 'penalty')).toBe(false);
+  });
+
   it('too slow: card back + 1', () => {
     let s = withTop(5);
     s.players[0].hand[0] = card(5, 'S');
@@ -153,6 +165,7 @@ describe('throwing matching cards', () => {
     s = act(s, { type: 'DRAW', playerId: 'a' });
     s = act(s, { type: 'DISCARD', playerId: 'a' });
     if (s.phase === 'power') s = act(s, { type: 'SKIP_POWER', playerId: 'a' });
+    s = act(s, { type: 'END_ROUND' });
     expect(s.phase).toBe('roundEnd');
     const rb = s.results!.find((r) => r.playerId === 'b')!;
     expect(rb.sum).toBe(0);
@@ -173,8 +186,34 @@ describe('Pedro', () => {
     expect(currentPlayer(s).id).toBe('b');
     s = act(s, { type: 'DRAW', playerId: 'b' });
     s = act(s, { type: 'DISCARD', playerId: 'b' });
+    expect(s.phase).toBe('lastCall');
+    s = act(s, { type: 'END_ROUND' });
     expect(s.phase).toBe('roundEnd');
     expect(s.results!.find((r) => r.playerId === 'a')).toMatchObject({ sum: 10, penalty: 10, total: 20 });
+  });
+
+  it('after the very last discard, everyone can still throw on it before the cards are counted', () => {
+    let s = started();
+    s.players[0].hand = [card(3, 'S', 'a3'), card(5, 'H'), null, null];
+    s.players[1].hand = [card(4), card(6), null, null];
+    s.deck.push(card(12, 'C'), card(3, 'D', 'last3'));
+    s = act(s, { type: 'CALL_PEDRO', playerId: currentPlayer(s).id });
+    const caller = currentPlayer(s).id;
+    const other = caller === 'a' ? 'b' : 'a';
+    s = act(s, { type: 'DRAW', playerId: caller });
+    s = act(s, { type: 'DISCARD', playerId: caller }); // the 3♦
+    s = act(s, { type: 'DRAW', playerId: other });
+    s = act(s, { type: 'DISCARD', playerId: other }); // Q♣: the final discard
+    expect(s.phase).toBe('lastCall');
+    // Throwing is allowed; turns are not.
+    expect(apply(s, { type: 'DRAW', playerId: other }, ctx()).ok).toBe(false);
+    s.discard[s.discard.length - 1] = card(3, 'C', 'top3');
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'a', slot: 0 } });
+    expect(s.players[0].hand.some((c) => c?.id === 'a3')).toBe(false); // burned (a got +2 instead)
+    expect(s.discard.at(-1)?.id).toBe('a3');
+    expect(s.phase).toBe('lastCall');
+    s = act(s, { type: 'END_ROUND' });
+    expect(['roundEnd', 'gameOver']).toContain(s.phase);
   });
 
   it('one-shot game ends after a single round', () => {
@@ -186,6 +225,7 @@ describe('Pedro', () => {
     s = act(s, { type: 'DRAW', playerId: 'b' });
     s = act(s, { type: 'DISCARD', playerId: 'b' });
     if (s.phase === 'power') s = act(s, { type: 'SKIP_POWER', playerId: 'b' });
+    if (s.phase === 'lastCall') s = act(s, { type: 'END_ROUND' });
     expect(s.phase).toBe('gameOver');
   });
 });
@@ -270,6 +310,10 @@ describe('bot simulation', () => {
         }
         if (s.phase === 'roundEnd') {
           run({ type: 'NEXT_ROUND' });
+          continue;
+        }
+        if (s.phase === 'lastCall') {
+          run({ type: 'END_ROUND' });
           continue;
         }
         expect(isPlayPhase(s)).toBe(true);

@@ -37,8 +37,21 @@ export const DEFAULT_SETTINGS: RoomSettings = {
 export interface SeatInfo {
   id: string;
   name: string;
+  avatar?: string;
   isBot: boolean;
   connected: boolean;
+}
+
+/** open: listed in the lobby, anyone can sit. private: listed, but strangers must ask the host. quick: a quick-match table that starts by itself. */
+export type Visibility = 'open' | 'private' | 'quick';
+export const QUICK_SEATS = 4;
+export const QUICK_WAIT_MS = 20_000;
+
+/** Someone from the lobby knocking at a private table. */
+export interface JoinRequest {
+  id: string;
+  name: string;
+  avatar?: string;
 }
 
 export interface RoomInfo {
@@ -47,11 +60,51 @@ export interface RoomInfo {
   seats: SeatInfo[];
   settings: RoomSettings;
   started: boolean;
+  visibility: Visibility;
+  /** Only sent to the host of a private table. */
+  requests?: JoinRequest[];
+  /** Quick-match tables: ms until the game starts on its own. */
+  autoStartIn?: number | null;
+  /** Private tables: the secret part of the invite link (only sent to people already seated). */
+  key?: string;
 }
 
+/* ───────────── the lobby (who's online, which tables are open) ───────────── */
+
+export interface TableListing {
+  code: string;
+  visibility: Visibility;
+  /** Human players at the table. */
+  players: { name: string; avatar?: string }[];
+  bots: number;
+  started: boolean;
+  round?: number;
+  /** Highest total, to show how far the game is. */
+  limit: number | null;
+  updatedAt: number;
+}
+
+export interface LobbySnapshot {
+  online: number;
+  playing: number;
+  tables: TableListing[];
+}
+
+export type LobbyMsg = { t: 'lobby'; lobby: LobbySnapshot };
+
 export type ClientMsg =
-  | { t: 'hello'; name: string; token: string }
-  | { t: 'settings'; settings: RoomSettings }
+  | {
+      t: 'hello';
+      name: string;
+      token: string;
+      avatar?: string;
+      /** Only used by whoever opens a new table. */
+      mode?: Visibility;
+      /** Invite key from a private link (or set by the creator). */
+      key?: string;
+    }
+  | { t: 'admit'; id: string; ok: boolean }
+  | { t: 'settings'; settings: RoomSettings; visibility?: Visibility }
   | { t: 'start' }
   | { t: 'action'; action: Action }
   | { t: 'lobby' }
@@ -61,4 +114,6 @@ export type ServerMsg =
   | { t: 'room'; room: RoomInfo; you: string }
   /** deadlineIn: ms until the current human turn is auto-played (server and phone clocks differ, so it's relative). */
   | { t: 'state'; state: GameState; deadlineIn: number | null }
-  | { t: 'error'; message: string; fatal?: boolean };
+  | { t: 'error'; message: string; fatal?: boolean }
+  /** You knocked at a private table: waiting for the host. */
+  | { t: 'knocking' };

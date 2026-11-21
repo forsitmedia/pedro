@@ -113,7 +113,13 @@ function endTurn(s: GameState, ctx: Ctx) {
   const curId = s.players[s.current].id;
   if (s.pedro) {
     s.pedro.remaining = s.pedro.remaining.filter((id) => id !== curId);
-    if (s.pedro.remaining.length === 0) return endRound(s, ctx);
+    if (s.pedro.remaining.length === 0) {
+      // If the final discard can still be thrown on, everyone gets a few seconds first.
+      if (!s.snap.open) return endRound(s, ctx);
+      s.phase = 'lastCall';
+      log(s, ctx, { kind: 'lastCall', text: 'Last chance to throw a matching card!' });
+      return;
+    }
     for (let i = 1; i <= n; i++) {
       const idx = (s.current + i) % n;
       if (s.pedro.remaining.includes(s.players[idx].id)) {
@@ -173,6 +179,7 @@ function dealRound(s: GameState, ctx: Ctx) {
     s.ready[p.id] = false;
   }
   s.pedro = null;
+  s.nextReady = {};
   s.results = null;
   s.drawn = null;
   s.pendingPower = null;
@@ -202,6 +209,7 @@ export function createGame(
     pendingPower: null,
     peeked: {},
     ready: {},
+    nextReady: {},
     known: {},
     pedro: null,
     results: null,
@@ -221,6 +229,12 @@ export function apply(state: GameState, action: Action, ctx: Ctx): ApplyResult {
   const fail = (error: string): ApplyResult => ({ ok: false, error });
   const done = (): ApplyResult => ({ ok: true, state: s });
 
+  if (action.type === 'END_ROUND') {
+    if (s.phase !== 'lastCall') return fail('The round is not ending.');
+    endRound(s, ctx);
+    return done();
+  }
+
   if (action.type === 'NEXT_ROUND') {
     if (s.phase !== 'roundEnd') return fail('The round is not over.');
     dealRound(s, ctx);
@@ -229,6 +243,12 @@ export function apply(state: GameState, action: Action, ctx: Ctx): ApplyResult {
 
   const actor = getPlayer(s, action.playerId);
   if (!actor) return fail('Unknown player.');
+
+  if (action.type === 'READY_NEXT') {
+    if (s.phase !== 'roundEnd') return fail('The round is not over.');
+    s.nextReady = { ...s.nextReady, [actor.id]: true };
+    return done();
+  }
   const isCurrent = currentPlayer(s).id === actor.id;
   const needTurn = (phase: GameState['phase']) => {
     if (s.phase !== phase) return 'You cannot do that now.';
@@ -440,7 +460,7 @@ export function apply(state: GameState, action: Action, ctx: Ctx): ApplyResult {
     }
 
     case 'SNAP': {
-      if (!isPlayPhase(s)) return fail('You cannot throw cards right now.');
+      if (!isPlayPhase(s) && s.phase !== 'lastCall') return fail('You cannot throw cards right now.');
       const top = topDiscard(s);
       if (!top) return fail('There is nothing on the discard pile yet.');
       const owner = getPlayer(s, action.target.playerId);

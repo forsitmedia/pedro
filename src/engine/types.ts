@@ -17,6 +17,8 @@ export interface Player {
   id: string;
   name: string;
   isBot: boolean;
+  /** Avatar code (`species.color.accessory`), chosen by the player. */
+  avatar?: string;
   /** Face-down cards. `null` = an empty spot left after throwing a card away. */
   hand: (Card | null)[];
   /** Cumulative score across rounds. */
@@ -28,6 +30,7 @@ export type Phase =
   | 'turnStart' // current player may call Pedro, draw from deck, or take the discard
   | 'drawn' // current player holds a card drawn from the deck
   | 'power' // drawn power card was discarded; current player may use its power
+  | 'lastCall' // every last turn is played: a few seconds to throw on the final discard, then the cards are counted
   | 'roundEnd'
   | 'gameOver';
 
@@ -72,6 +75,7 @@ export type EventKind =
   | 'penalty'
   | 'reshuffle'
   | 'turn'
+  | 'lastCall'
   | 'roundEnd'
   | 'gameOver';
 
@@ -110,6 +114,8 @@ export interface GameState {
   pendingPower: PowerRank | null;
   peeked: Record<string, boolean>;
   ready: Record<string, boolean>;
+  /** Between rounds: players who pressed "ready for the next round". */
+  nextReady?: Record<string, boolean>;
   /** Card ids each player has seen and can (in theory) remember. */
   known: Record<string, string[]>;
   pedro: PedroState | null;
@@ -132,7 +138,11 @@ export type Action =
   | { type: 'SKIP_POWER'; playerId: string }
   /** `cardId`: the card the player meant to throw — if it's gone by the time the throw arrives, they were too slow. */
   | { type: 'SNAP'; playerId: string; target: SlotRef; cardId?: string }
-  | { type: 'NEXT_ROUND' };
+  | { type: 'NEXT_ROUND' }
+  /** Sent by the game itself (never by a player) when the last-chance seconds are over. */
+  | { type: 'END_ROUND' }
+  /** A player is ready for the next round (it starts when everyone is, or after a countdown). */
+  | { type: 'READY_NEXT'; playerId: string };
 
 export interface Ctx {
   rng: () => number;

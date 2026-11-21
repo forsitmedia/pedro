@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { cardName, powerOf } from '../engine/cards';
+import { cardName, powerOf, rankLabel } from '../engine/cards';
 import { currentPlayer, getPlayer, handCount, isPlayPhase, topDiscard } from '../engine/engine';
 import type { Action, Card, EventKind, GameState, Player, PowerRank, SlotRef } from '../engine/types';
 import type { GameConnection } from '../game/connection';
@@ -17,7 +17,10 @@ import { flightsFor, FlightView, heldKey, measure, slotKey, type Flight, type Re
 import { Rules } from './Rules';
 import { RoundReveal } from './RoundReveal';
 import { gridPos } from './layout';
-import { MUSIC_STYLES, setPrefs, usePrefs, type MusicStyle } from './prefs';
+import { MUSIC_STYLES, setPrefs, usePrefs } from './prefs';
+import { Icon, IconButton } from './art/Icon';
+import { Avatar, avatarFor } from './art/Avatar';
+import { SettingsPanel } from './Personalize';
 import { play } from './sound';
 
 type Tone = 'info' | 'good' | 'bad' | 'big' | 'error';
@@ -47,6 +50,7 @@ const TOAST_TONE: Partial<Record<EventKind, Tone>> = {
   snapWrong: 'bad',
   snapSlow: 'bad',
   reshuffle: 'info',
+  lastCall: 'big',
   power: 'info',
 };
 
@@ -74,6 +78,7 @@ function youify(text: string, myName: string): string {
   if (t.startsWith('You ')) {
     t = t.replace(/^You ([\w']+)/, (m, verb: string) => (VERBS[verb] ? `You ${VERBS[verb]}` : m));
     t = t.replace(/\btheir\b/g, 'your');
+    t = t.replace(/ and (discards|throws|takes|swaps) /, (_m, v: string) => ` and ${VERBS[v] ?? v} `);
   }
   return t;
 }
@@ -109,10 +114,20 @@ export function GameTable({
   const gated = now < gate.until && cur.id === HUMAN_ID;
   const myTurn = isPlayPhase(s) && cur.id === HUMAN_ID && !gated;
   const shownCurId = gated ? gate.actorId : cur.id;
-  const canThrow = isPlayPhase(s) && s.discard.length > 0;
+  const lastCall = s.phase === 'lastCall';
+  const canThrow = (isPlayPhase(s) || lastCall) && s.discard.length > 0;
   const held = myTurn && s.phase === 'drawn' ? s.drawn : null;
   /** Power I can use right now by tapping a target (drawn power card, or already discarded). */
-  const activePower: PowerRank | null = held ? powerOf(held) : myTurn && s.phase === 'power' ? s.pendingPower : null;
+  /**
+   * Holding a drawn power card: first choose — use its power, or keep the card (swap it into your hand).
+   * Tapping one of your cards would otherwise be ambiguous (7: peek or swap?).
+   */
+  const [heldMode, setHeldMode] = useState<'ask' | 'power' | 'swap'>('ask');
+  const heldIsPower = !!held && !!powerOf(held);
+  useEffect(() => setHeldMode('ask'), [held?.id]);
+  const activePower: PowerRank | null =
+    held && heldIsPower && heldMode === 'power' ? powerOf(held) : myTurn && s.phase === 'power' ? s.pendingPower : null;
+  const choosing = heldIsPower && heldMode === 'ask';
 
   const [takeMode, setTakeMode] = useState(false);
   const [nineFirst, setNineFirst] = useState<SlotRef | null>(null);
@@ -121,6 +136,7 @@ export function GameTable({
   const [flashes, setFlashes] = useState<Record<string, number>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showRules, setShowRules] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [flights, setFlights] = useState<Flight[]>([]);
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -193,6 +209,8 @@ export function GameTable({
         return play('penalty', anim ? 1500 : 0);
       case 'reshuffle':
         return play('shuffle');
+      case 'lastCall':
+        return play('turn');
       case 'pedro':
         return isPedroCall(e) ? play('pedro') : play('place');
       case 'power':
@@ -379,10 +397,11 @@ export function GameTable({
     if (s.phase === 'peek') return mine && !s.peeked[HUMAN_ID];
     if (!myTurn) return false;
     if (s.phase === 'turnStart') return takeMode && mine;
+    if (choosing) return false;
     if (activePower === 7) return mine;
-    if (activePower === 8) return !mine || s.phase === 'drawn'; // opponent = peek, mine = swap
+    if (activePower === 8) return !mine;
     if (activePower === 9) return !nineFirst || nineFirst.playerId !== ref.playerId || keyOfRef(nineFirst) === keyOfRef(ref);
-    if (activePower === 10) return !mine || s.phase === 'drawn';
+    if (activePower === 10) return true; // any player's hand, yours included
     return s.phase === 'drawn' && mine;
   };
 
@@ -404,7 +423,7 @@ export function GameTable({
     }
     if (activePower === 7 && mine) return usePower({ target: ref });
     if (activePower === 8 && !mine) return usePower({ target: ref });
-    if (activePower === 10 && !mine) return usePower({ targetPlayerId: ref.playerId });
+    if (activePower === 10) return usePower({ targetPlayerId: ref.playerId });
     if (activePower === 9) {
       if (!nineFirst || nineFirst.playerId === ref.playerId) {
         setNineFirst(nineFirst && keyOfRef(nineFirst) === keyOfRef(ref) ? null : ref);
@@ -414,7 +433,7 @@ export function GameTable({
       }
       return;
     }
-    if (s.phase === 'drawn' && mine) run({ type: 'SWAP', playerId: HUMAN_ID, slot: ref.slot });
+    if (s.phase === 'drawn' && mine && !activePower) run({ type: 'SWAP', playerId: HUMAN_ID, slot: ref.slot });
   };
 
   const onDeckTap = () => {
@@ -427,7 +446,7 @@ export function GameTable({
     if (!myTurn) return;
     if (s.phase === 'turnStart') {
       if (s.discard.length && !s.topBurned) setTakeMode(!takeMode);
-      else if (s.topBurned) toast('That card is burned 🔥 — it cannot be taken.', 'error');
+      else if (s.topBurned) toast('That card is burned — it cannot be taken.', 'error');
     } else discardHeld();
   };
 
@@ -567,12 +586,13 @@ export function GameTable({
 
   const badges = (p: Player) => (
     <>
-      {s.pedro?.callerId === p.id && <span className="badge badge--pedro">called Pedro</span>}
-      {isPlayPhase(s) && shownCurId === p.id && <span className="badge badge--turn">playing</span>}
+      {s.pedro?.callerId === p.id && <span className="badge badge--pedro">Pedro!</span>}
+      {/* Opponents' seats light up on their turn; the label only goes on yours (space is tight). */}
+      {isPlayPhase(s) && shownCurId === p.id && p.id === HUMAN_ID && <span className="badge badge--turn">playing</span>}
       {s.phase === 'peek' && s.ready[p.id] && <span className="badge">ready</span>}
-      {game.isAway?.(p.id) && <span className="badge badge--away">📵 away</span>}
-      {Object.values(peeks).some((v) => v.by === p.id && v.until > now) && <span className="badge badge--peek">👀 peeking</span>}
-      {(shuffles[p.id] ?? 0) > now && <span className="badge badge--peek">🔀 shuffled</span>}
+      {game.isAway?.(p.id) && <span className="badge badge--away"><Icon name="away" size={12} /> away</span>}
+      {Object.values(peeks).some((v) => v.by === p.id && v.until > now) && <span className="badge badge--peek"><Icon name="eye" size={13} /> peeking</span>}
+      {(shuffles[p.id] ?? 0) > now && <span className="badge badge--peek"><Icon name="shuffle" size={13} /> shuffled</span>}
       {(penalties[p.id]?.until ?? 0) > now && (
         <span className="badge badge--penalty">
           +{penalties[p.id].n} · {penalties[p.id].why.toLowerCase() || `card${penalties[p.id].n > 1 ? 's' : ''}`}
@@ -610,42 +630,31 @@ export function GameTable({
   return (
     <div className={`table ${prefs.animations ? '' : 'no-anim'}`}>
       <header className="topbar">
-        <button className="link" onClick={onExit}>
-          ← Menu
-        </button>
+        <IconButton icon="home" label="Back to the menu" onClick={onExit} />
         <div className="title">
           PEDRO <span className="round">Round {s.round}</span>
         </div>
         <div className="topbar-right">
-          <button
-            className={`toggle ${prefs.sound ? '' : 'is-off'}`}
+          <IconButton
+            icon={prefs.sound ? 'sound' : 'mute'}
+            label={prefs.sound ? 'Sound on — tap to mute' : 'Sound off — tap to turn on'}
+            off={!prefs.sound}
+            pressed={prefs.sound}
             onClick={() => setPrefs({ sound: !prefs.sound })}
-            title={prefs.sound ? 'Sound on — tap to mute' : 'Sound off — tap to turn on'}
-            aria-pressed={prefs.sound}
-          >
-            {prefs.sound ? '🔊' : '🔇'} <span className="toggle-label">Sound</span>
-          </button>
-          <label className={`toggle toggle--select ${prefs.musicStyle === 'off' ? 'is-off' : ''}`} title="Background music">
-            🎵
-            <select value={prefs.musicStyle} onChange={(e) => setPrefs({ musicStyle: e.target.value as MusicStyle })} aria-label="Background music">
-              {MUSIC_STYLES.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id === 'off' ? 'Music off' : m.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className={`toggle ${prefs.animations ? '' : 'is-off'}`}
-            onClick={() => setPrefs({ animations: !prefs.animations })}
-            title={prefs.animations ? 'Animations on — tap to turn off' : 'Animations off — tap to turn on'}
-            aria-pressed={prefs.animations}
-          >
-            {prefs.animations ? '✨' : '⏸'} <span className="toggle-label">Animations</span>
-          </button>
-          <button className="link" onClick={() => setShowRules(true)}>
-            Rules
-          </button>
+          />
+          <IconButton
+            icon="music"
+            label={`Music: ${MUSIC_STYLES.find((m) => m.id === prefs.musicStyle)?.label} — tap to change`}
+            off={prefs.musicStyle === 'off'}
+            onClick={() => {
+              const i = MUSIC_STYLES.findIndex((m) => m.id === prefs.musicStyle);
+              const next = MUSIC_STYLES[(i + 1) % MUSIC_STYLES.length];
+              setPrefs({ musicStyle: next.id });
+              toast(next.id === 'off' ? 'Music off' : `Music: ${next.label}`, 'info');
+            }}
+          />
+          <IconButton icon="gear" label="Settings: table, deck, sound" onClick={() => setShowSettings(true)} />
+          <IconButton icon="help" label="Rules" onClick={() => setShowRules(true)} />
         </div>
       </header>
 
@@ -661,6 +670,7 @@ export function GameTable({
               }}
             >
               <div className="seat-head">
+                <Avatar code={avatarFor(p)} size={28} className="seat-avatar" />
                 <span className="seat-name">{p.name}</span>
                 <span className="seat-score">
                   {p.total}
@@ -693,7 +703,7 @@ export function GameTable({
             <span className="pile-label">Deck · {s.deck.length}</span>
           </div>
 
-          <div className="pile pile--discard">
+          <div className={`pile pile--discard ${lastCall && s.snap.open ? 'is-lastcall' : ''}`}>
             <div className="discard-stack">
               {shownUnder && (
                 <div className="under">
@@ -713,12 +723,12 @@ export function GameTable({
                 onClick={onDiscardTap}
                 onPointerDown={(e) => top && startDrag(e, { kind: 'discard', card: top })}
               />
-              {s.topBurned && !discardHidden && <span className="burned">🔥</span>}
+              {s.topBurned && !discardHidden && <Icon name="fire" className="burned" size={30} />}
               {burnAt && now >= burnAt.from - 250 && now < burnAt.until && (
                 <span key={burnAt.from} className="burn-fx" aria-hidden>
-                  <span>🔥</span>
-                  <span>🔥</span>
-                  <span>🔥</span>
+                  <Icon name="fire" />
+                  <Icon name="fire" />
+                  <Icon name="fire" />
                 </span>
               )}
             </div>
@@ -731,6 +741,7 @@ export function GameTable({
           data-key="zone:me"
         >
           <div className="seat-head">
+            <Avatar code={avatarFor(me)} size={30} className="seat-avatar" />
             <span className="seat-name">{me.name}</span>
             <span className="seat-score">
               {me.total}
@@ -754,6 +765,9 @@ export function GameTable({
               takeMode={takeMode}
               nineFirst={nineFirst}
               activePower={activePower}
+              choosing={choosing}
+              heldMode={heldIsPower ? heldMode : null}
+              onHeldMode={setHeldMode}
               onReady={() => {
                 setReveals((r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== Infinity)));
                 setPeekSel([]);
@@ -836,13 +850,21 @@ export function GameTable({
       )}
 
       {(s.phase === 'roundEnd' || s.phase === 'gameOver') && flights.length === 0 && (
-        <RoundReveal key={`${s.round}-${s.phase}`} meId={HUMAN_ID} restartLabel={restartLabel} s={s} onNext={() => run({ type: 'NEXT_ROUND' })} onRestart={onRestart} onExit={onExit} />
+        <RoundReveal key={`${s.round}-${s.phase}`} meId={HUMAN_ID} restartLabel={restartLabel} s={s} onNext={() => run({ type: 'READY_NEXT', playerId: HUMAN_ID })} deadline={deadlineLeft} onRestart={onRestart} onExit={onExit} />
       )}
 
       {showRules && <Rules onClose={() => setShowRules(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
+
+const POWER_LABEL: Record<PowerRank, string> = {
+  7: 'peek at one of your cards',
+  8: "peek at an opponent's card",
+  9: 'swap two cards blindly',
+  10: "shuffle a player's cards",
+};
 
 function Hint(props: {
   meId: string;
@@ -853,9 +875,13 @@ function Hint(props: {
   takeMode: boolean;
   nineFirst: SlotRef | null;
   activePower: PowerRank | null;
+  /** Holding a power card and haven't chosen yet: power or keep? */
+  choosing: boolean;
+  heldMode: 'ask' | 'power' | 'swap' | null;
+  onHeldMode: (m: 'ask' | 'power' | 'swap') => void;
   onReady: () => void;
 }) {
-  const { s, myTurn, takeMode, nineFirst, activePower, onReady } = props;
+  const { s, myTurn, takeMode, nineFirst, activePower, onReady, choosing, heldMode, onHeldMode } = props;
   const HUMAN_ID = props.meId;
   const top = topDiscard(s);
   let text = '';
@@ -871,6 +897,11 @@ function Hint(props: {
         </button>
       );
     } else text = 'Waiting for the others…';
+  } else if (s.phase === 'lastCall') {
+    text =
+      top && s.snap.open
+        ? `Last chance! Throw a ${top.rank === 0 ? 'Joker' : rankLabel(top.rank)} now — drag it onto the pile before the cards are counted.`
+        : 'Counting the cards…';
   } else if (!isPlayPhase(s)) {
     text = '';
   } else if (!myTurn) {
@@ -879,31 +910,53 @@ function Hint(props: {
     text = takeMode
       ? `Tap one of your cards to swap it with the ${top ? cardName(top) : ''} (tap the pile again to cancel).`
       : `Your turn — tap the deck to draw${top && !s.topBurned ? `, or drag the ${cardName(top)} onto one of your cards` : ''}.`;
+  } else if (choosing && s.drawn) {
+    const r = s.drawn.rank as PowerRank;
+    text = `You drew a ${r} — a power card! What do you want to do?`;
+    button = (
+      <div className="choice">
+        <button className="btn btn--primary" onClick={() => onHeldMode('power')}>
+          Use the power: {POWER_LABEL[r]}
+        </button>
+        <button className="btn" onClick={() => onHeldMode('swap')}>
+          Keep the {r} (swap it with one of my cards)
+        </button>
+        <span className="muted small">…or tap the pile to throw it away.</span>
+      </div>
+    );
   } else {
-    const keep = 'drag it onto your card to keep it';
-    const away = 'or tap the pile to discard it';
+    const away = 'or tap the pile to throw it away';
+    const back =
+      heldMode && heldMode !== 'ask' ? (
+        <button className="btn btn--small" onClick={() => onHeldMode('ask')}>
+          ← Change my mind
+        </button>
+      ) : null;
     switch (activePower) {
       case 7:
-        text = `Power 7: tap one of your cards to peek at it — ${keep}, ${away}.`;
+        text = 'Power 7: tap one of your cards to peek at it.';
         break;
       case 8:
-        text = `Power 8: tap an opponent's card to peek at it — tap one of yours to swap, ${away}.`;
+        text = "Power 8: tap an opponent's card to peek at it.";
         break;
       case 9:
-        text = nineFirst
-          ? 'Power 9: now tap a card of a different player — they swap blindly.'
-          : `Power 9: tap two cards of different players to swap them blindly — ${keep}, ${away}.`;
+        text = nineFirst ? 'Power 9: now tap a card of a different player — they swap blindly.' : 'Power 9: tap two cards of different players to swap them blindly.';
         break;
       case 10:
-        text = `Power 10: tap an opponent to shuffle their cards — tap one of yours to swap, ${away}.`;
+        text = "Power 10: tap a player's cards (yours too) to shuffle them.";
         break;
       default:
-        text = s.drawn ? `You drew ${cardName(s.drawn)}. Tap or drag onto one of your cards to swap, ${away}.` : '';
+        text = s.drawn
+          ? heldMode === 'swap'
+            ? `Keep the ${cardName(s.drawn)}: tap the card of yours it replaces, ${away}.`
+            : `You drew ${cardName(s.drawn)}. Tap or drag onto one of your cards to swap, ${away}.`
+          : '';
     }
+    button = back;
   }
 
   return (
-    <div className={`actionbar ${myTurn || (s.phase === 'peek' && !s.ready[HUMAN_ID]) ? 'is-urgent' : ''}`}>
+    <div className={`actionbar ${myTurn || s.phase === 'lastCall' || (s.phase === 'peek' && !s.ready[HUMAN_ID]) ? 'is-urgent' : ''}`}>
       <p className="hint">
         {props.deadline !== null && props.deadline <= 20 && <span className="timer">⏱ {props.deadline}s</span>} {text}
       </p>

@@ -293,8 +293,11 @@ export function planSnap(
   const me = getPlayer(s, botId)!;
   const delay = profile.snapDelay[0] + rng() * (profile.snapDelay[1] - profile.snapDelay[0]);
 
-  // Throwing your own red King (−1) would raise your total — a real player keeps it.
-  const own = me.hand.findIndex((c) => c && mem.has(c.id) && c.rank === top.rank && cardValue(c) >= 0);
+  // Throwing your own red King (−1) raises your total, so normally a real player keeps it.
+  // Exception: it's your LAST card in the final round while others still play — burning it empties
+  // your hand, and then nobody can swap a bad card onto you with a 9.
+  const lastCardShield = !!s.pedro && s.phase !== 'lastCall' && handCount(me) === 1;
+  const own = me.hand.findIndex((c) => c && mem.has(c.id) && c.rank === top.rank && (cardValue(c) >= 0 || lastCardShield));
   if (own >= 0 && rng() < profile.snapChance) {
     return { target: { playerId: botId, slot: own }, cardId: me.hand[own]!.id, delay };
   }

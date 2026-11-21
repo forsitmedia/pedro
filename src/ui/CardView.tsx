@@ -1,6 +1,8 @@
 import type { CSSProperties, PointerEvent } from 'react';
 import { cardValue, isRed, rankLabel, suitSymbol } from '../engine/cards';
 import type { Card } from '../engine/types';
+import { Figure, SkullMark } from './art/Figures';
+import { usePrefs, type DeckStyle } from './prefs';
 
 interface Props {
   card: Card | null;
@@ -19,6 +21,8 @@ interface Props {
   draggable?: boolean;
   title?: string;
   className?: string;
+  /** Force a deck style (previews); otherwise the player's chosen deck. */
+  deck?: DeckStyle;
   style?: CSSProperties;
   onClick?: () => void;
   onPointerDown?: (e: PointerEvent<HTMLDivElement>) => void;
@@ -27,8 +31,11 @@ interface Props {
 export function CardView(props: Props) {
   const { card, faceUp, dataKey, selectable, selected, flash, dim, empty, hidden, dropTarget, over, draggable, title, style } = props;
   const showFace = faceUp && card && !empty;
+  const prefDeck = usePrefs().deck;
+  const deck = props.deck ?? prefDeck;
   const cls = [
     'card',
+    `deck-${deck}`,
     empty ? 'card--empty' : showFace ? 'card--face' : 'card--back',
     showFace && isRed(card) ? 'is-red' : '',
     selectable ? 'is-selectable' : '',
@@ -59,17 +66,30 @@ export function CardView(props: Props) {
         }
       }}
     >
-      {empty ? null : showFace ? <Face card={card} /> : <div className="card-back">P</div>}
+      {empty ? null : showFace ? <Face card={card} deck={deck} /> : <CardBack deck={deck} />}
     </div>
   );
 }
 
-function Face({ card }: { card: Card }) {
+function CardBack({ deck }: { deck: DeckStyle }) {
+  return <div className="card-back">{deck === 'deadly' ? <SkullMark /> : deck === 'clean' ? null : 'P'}</div>;
+}
+
+/** Court cards and the Joker get our own drawn figures (except the minimal "Clean" deck). */
+const hasFigures = (deck: DeckStyle) => deck !== 'clean';
+
+function Face({ card, deck }: { card: Card; deck: DeckStyle }) {
   if (card.rank === 0) {
     return (
       <div className="face face--joker">
         <span className="corner">★</span>
-        <span className="joker-label">JOKER</span>
+        {hasFigures(deck) ? (
+          <span className="art">
+            <Figure rank={0} suit="★" skull={deck === 'deadly'} />
+          </span>
+        ) : (
+          <span className="joker-label">JOKER</span>
+        )}
         <span className="value-pill">0</span>
       </div>
     );
@@ -81,9 +101,15 @@ function Face({ card }: { card: Card }) {
       <span className="corner">
         {r}
         <br />
-        {s}
+        <span className="corner-suit">{s}</span>
       </span>
-      <span className="pip">{card.rank >= 11 ? r : s}</span>
+      {card.rank >= 11 && hasFigures(deck) ? (
+        <span className="art">
+          <Figure rank={card.rank as 11 | 12 | 13} suit={s} skull={deck === 'deadly'} />
+        </span>
+      ) : (
+        <span className="pip">{card.rank >= 11 && deck !== 'clean' ? r : s}</span>
+      )}
       <span className="corner corner--br">
         {r}
         <br />

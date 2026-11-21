@@ -6,6 +6,7 @@ export interface RunnerPlayer {
   id: string;
   name: string;
   isBot: boolean;
+  avatar?: string;
 }
 
 export interface RunnerOptions {
@@ -20,6 +21,10 @@ export interface RunnerOptions {
 
 /** How long we wait for a disconnected player before playing their turn for them. */
 const AWAY_SECONDS = 8;
+/** Seconds everyone gets to throw on the very last discard of a round. */
+const LAST_CALL_SECONDS = 5;
+/** Seconds between rounds (results + reveal) before the next round starts on its own. */
+const NEXT_ROUND_SECONDS = 45;
 
 export const BOT_NAMES = ['Lucía', 'Mateo', 'Valentina', 'Santiago', 'Martina', 'Joaquín', 'Camila'];
 
@@ -142,6 +147,37 @@ export class GameRunner {
       return;
     }
 
+    if (s.phase === 'roundEnd') {
+      // Next round as soon as every (connected) human is ready — or when the countdown runs out.
+      const waiting = s.players.filter((p) => !p.isBot && !s.nextReady?.[p.id] && !this.opts.isAway?.(p.id));
+      if (!waiting.length) {
+        this.turnDeadline = null;
+        this.dispatch({ type: 'NEXT_ROUND' });
+        return;
+      }
+      if (this.nextRoundFor !== s.round) {
+        this.nextRoundFor = s.round;
+        const round = s.round;
+        this.turnDeadline = Date.now() + NEXT_ROUND_SECONDS * 1000;
+        this.later(() => {
+          if (this.state.phase === 'roundEnd' && this.state.round === round) {
+            this.turnDeadline = null;
+            this.dispatch({ type: 'NEXT_ROUND' });
+          }
+        }, NEXT_ROUND_SECONDS * 1000);
+      }
+      return;
+    }
+
+    if (s.phase === 'lastCall') {
+      if (s.snap.open && s.snap.eventId !== this.snapPlannedFor) {
+        this.snapPlannedFor = s.snap.eventId;
+        this.planBotSnaps();
+      }
+      this.scheduleRoundEnd();
+      return;
+    }
+
     if (!isPlayPhase(s)) return;
 
     if (currentPlayer(s).isBot && !this.turnTimer) {
@@ -158,6 +194,29 @@ export class GameRunner {
       this.snapPlannedFor = s.snap.eventId;
       this.planBotSnaps();
     }
+  }
+
+  /**
+   * Last chance to throw: a few seconds after the final turn, then the cards are counted.
+   * Any throw in that time pushes the end back a little, so its animation and penalty can be seen.
+   */
+  private lastCallTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastCallSeq = -1;
+  private nextRoundFor = -1;
+  private scheduleRoundEnd() {
+    const s = this.state;
+    const first = this.lastCallTimer === null && this.lastCallSeq === -1;
+    if (!first && s.seq === this.lastCallSeq) return;
+    const wait = first ? LAST_CALL_SECONDS * 1000 : Math.max(2500, (this.turnDeadline ?? 0) - Date.now());
+    this.lastCallSeq = s.seq;
+    if (this.lastCallTimer) clearTimeout(this.lastCallTimer);
+    this.turnDeadline = Date.now() + wait;
+    this.lastCallTimer = this.later(() => {
+      this.lastCallTimer = null;
+      this.lastCallSeq = -1;
+      this.turnDeadline = null;
+      if (this.state.phase === 'lastCall') this.dispatch({ type: 'END_ROUND' });
+    }, wait);
   }
 
   /** Turn timer for humans (and auto-play for disconnected players). */
@@ -245,7 +304,7 @@ export class GameRunner {
       if (!plan) continue;
       this.later(() => {
         const st = this.state;
-        if (!isPlayPhase(st) || st.snap.eventId !== eventId) return;
+        if ((!isPlayPhase(st) && st.phase !== 'lastCall') || st.snap.eventId !== eventId) return;
         // If someone just beat us to it, a bot (like a human) may still slam its card down and get penalised.
         if (!st.snap.open && Date.now() - st.snap.closedAt > 350) return;
         const where = findCard(st, plan.cardId);
