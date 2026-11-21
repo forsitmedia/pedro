@@ -486,7 +486,7 @@ export function apply(state: GameState, action: Action, ctx: Ctx): ApplyResult {
         owner.hand[ref.slot] = null;
         s.discard.push(c);
         s.topBurned = true;
-        s.snap = { ...s.snap, open: false, closedAt: ctx.now, by: actor.id };
+        s.snap = { ...s.snap, open: false, closedAt: ctx.now, by: actor.id, own: owner.id === actor.id };
         log(s, ctx, {
           kind: 'snap',
           actorId: actor.id,
@@ -495,6 +495,21 @@ export function apply(state: GameState, action: Action, ctx: Ctx): ApplyResult {
           text: `${actor.name} throws ${whose} ${cardName(c)} on the ${cardName(top)}!`,
         });
         if (owner.id !== actor.id) givePenalty(s, ctx, owner.id, 2, `${actor.name} threw their card`, { reason: 'caught', byId: actor.id });
+        checkAutoPedro(s, ctx, owner.id);
+        return done();
+      }
+
+      // Double (triple…) throw: you were first with your own card, and you throw another of your own of the same rank.
+      if (c.rank === top.rank && !s.snap.open && s.snap.by === actor.id && s.snap.own && owner.id === actor.id && s.topBurned) {
+        owner.hand[ref.slot] = null;
+        s.discard.push(c);
+        log(s, ctx, {
+          kind: 'snap',
+          actorId: actor.id,
+          card: c,
+          slots: [ref],
+          text: `${actor.name} throws another ${cardName(c)} too — double!`,
+        });
         checkAutoPedro(s, ctx, owner.id);
         return done();
       }

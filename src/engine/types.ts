@@ -105,7 +105,11 @@ export interface GameState {
   /** Top discard was thrown by matching — it cannot be picked up. */
   topBurned: boolean;
   /** Each discard opens a "throw window"; the first correct matching throw closes it. */
-  snap: { eventId: number; open: boolean; closedAt: number; by?: string };
+  /**
+   * `by` closed the window; `own` = with one of their own cards. Then (and only then) they may
+   * throw more of their own cards of the same rank on top — "two 6s on a 6" — until the pile changes.
+   */
+  snap: { eventId: number; open: boolean; closedAt: number; by?: string; own?: boolean };
   phase: Phase;
   current: number;
   starter: number;

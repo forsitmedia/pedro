@@ -56,6 +56,10 @@ export function Rules({ onClose }: { onClose: () => void }) {
         </p>
         <ul>
           <li>Your own card: you have one card less. 🎉</li>
+          <li>
+            <b>Double:</b> if you were first with your own card, you can throw your <b>other</b> cards of the same rank too (two
+            6s on a 6) — as long as that card is still on top. Only your own cards, and each one must be right.
+          </li>
           <li>An opponent's card: they get 2 penalty cards.</li>
           <li>Wrong card: it goes back (now everyone has seen it) and you get 2 penalty cards.</li>
           <li>Too slow (someone threw first): your card goes back and you get 1 penalty card.</li>

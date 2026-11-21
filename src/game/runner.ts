@@ -1,3 +1,4 @@
+import { cardValue } from '../engine/cards';
 import { buildMemory, decideAction, planSnap, PROFILES, type BotProfile, type Difficulty } from '../bots/bot';
 import { apply, createGame, currentPlayer, findCard, isPlayPhase } from '../engine/engine';
 import type { Action, GameSettings, GameState } from '../engine/types';
@@ -310,6 +311,21 @@ export class GameRunner {
         const where = findCard(st, plan.cardId);
         if (!where) return;
         this.dispatch({ type: 'SNAP', playerId: p.id, target: where });
+        // First with its own card? Then any other card of that rank it remembers goes down too.
+        const after = this.state;
+        if (!(after.snap.by === p.id && after.snap.own && after.snap.eventId === eventId)) return;
+        const top = after.discard[after.discard.length - 1];
+        const memNow = buildMemory(after, p.id, this.forgotten[p.id]);
+        const me = after.players.find((x) => x.id === p.id)!;
+        const extra = me.hand.findIndex((c) => c && memNow.has(c.id) && top && c.rank === top.rank && cardValue(c) >= 0);
+        if (extra < 0) return;
+        const extraId = me.hand[extra]!.id;
+        this.later(() => {
+          const st2 = this.state;
+          if (st2.snap.eventId !== eventId) return;
+          const w2 = findCard(st2, extraId);
+          if (w2) this.dispatch({ type: 'SNAP', playerId: p.id, target: w2 });
+        }, 350 + this.rng() * 300);
       }, plan.delay);
     }
   }

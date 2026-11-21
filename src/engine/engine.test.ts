@@ -123,6 +123,48 @@ describe('throwing matching cards', () => {
     expect(s.events.some((e) => e.kind === 'penalty')).toBe(false);
   });
 
+  it('double throw: first with your own 6, you may also throw your other 6', () => {
+    let s = withTop(6);
+    s.players[1].hand[0] = card(6, 'S', 'six1');
+    s.players[1].hand[2] = card(6, 'C', 'six2');
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 0 } });
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 2 } });
+    expect(handCount(s.players[1])).toBe(2);
+    expect(s.discard.slice(-2).map((c) => c.id)).toEqual(['six1', 'six2']);
+    expect(s.events.some((e) => e.kind === 'penalty')).toBe(false);
+  });
+
+  it('double throw only with your own cards, and only if your own card went first', () => {
+    // You burned an opponent's 6 first: your own 6 afterwards is too slow.
+    let s = withTop(6);
+    s.players[0].hand[3] = card(6, 'H', 'theirs');
+    s.players[1].hand[1] = card(6, 'C', 'mine');
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'a', slot: 3 } });
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 1 } });
+    expect(s.players[1].hand[1]?.id).toBe('mine');
+    expect(s.events.at(-1)?.kind).toBe('penalty');
+
+    // You burned your own 6 first: an opponent's 6 afterwards is not part of the double.
+    let t = withTop(6);
+    t.players[1].hand[0] = card(6, 'S', 'mine2');
+    t.players[0].hand[2] = card(6, 'D', 'theirs2');
+    t = act(t, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 0 } });
+    const aBefore = handCount(t.players[0]);
+    t = act(t, { type: 'SNAP', playerId: 'b', target: { playerId: 'a', slot: 2 } });
+    expect(t.players[0].hand[2]?.id).toBe('theirs2');
+    expect(handCount(t.players[0])).toBe(aBefore);
+  });
+
+  it('a wrong second card in a double throw is still a wrong throw', () => {
+    let s = withTop(6);
+    s.players[1].hand[0] = card(6, 'S');
+    s.players[1].hand[1] = card(4, 'S', 'four');
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 0 } });
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'b', slot: 1 } });
+    expect(s.players[1].hand[1]?.id).toBe('four');
+    expect(handCount(s.players[1])).toBe(5); // 4 − 1 + 2
+  });
+
   it('too slow: card back + 1', () => {
     let s = withTop(5);
     s.players[0].hand[0] = card(5, 'S');
