@@ -347,3 +347,91 @@ function syncMusic() {
   if (music) stopMusic(ctx);
   if (want !== 'off' && ctx.state === 'running') startMusic(ctx, want);
 }
+
+// ───────────── reactions (laugh / cry / angry / aura) ─────────────
+
+export type ReactionSound = 'laugh' | 'cry' | 'angry' | 'aura';
+
+const midi = (m: number) => 440 * 2 ** ((m - 69) / 12);
+
+/** A plucked piano-ish note: quick attack, long soft decay, a touch of overtone. */
+function piano(a: AudioContext, out: AudioNode, at: number, m: number, dur: number, gain: number) {
+  tone(a, out, at, midi(m), dur, gain, 'triangle');
+  tone(a, out, at, midi(m + 12), dur * 0.5, gain * 0.25, 'sine');
+}
+
+/** Soft-clipping, for the crunchy 808 of a funk edit. */
+function crunch(a: AudioContext, amount: number): WaveShaperNode {
+  const ws = a.createWaveShaper();
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * amount);
+  }
+  ws.curve = curve;
+  return ws;
+}
+
+/** About 2 seconds of sound for a reaction. */
+export function playReaction(r: ReactionSound) {
+  if (!getPrefs().sound) return;
+  const a = audio();
+  if (!a || a.state !== 'running' || !sfxOut) return;
+  const out = sfxOut;
+  const t = a.currentTime + 0.02;
+  switch (r) {
+    case 'laugh': {
+      // "Ha-ha-ha-ha": bouncy little blips, falling in pitch, with a wobble.
+      [79, 77, 79, 76, 74, 72].forEach((m, i) => {
+        const at = t + i * 0.13;
+        tone(a, out, at, midi(m), 0.1, 0.07, 'square', midi(m - 2));
+        burst(a, out, at, { type: 'bandpass', freq: 1800, q: 1.2, attack: 0.005, decay: 0.05, gain: 0.05 });
+      });
+      tone(a, out, t + 0.85, midi(84), 0.35, 0.04, 'sine', midi(91));
+      break;
+    }
+    case 'cry': {
+      // A sad piano: a falling minor line, then a soft A-minor chord.
+      [[76, 0], [74, 0.32], [72, 0.64], [71, 0.96]].forEach(([m, d]) => piano(a, out, t + d, m, 0.7, 0.09));
+      [57, 60, 64].forEach((m) => piano(a, out, t + 1.3, m, 1.4, 0.07));
+      break;
+    }
+    case 'angry': {
+      // Fire roaring up, a low growl, two stomps.
+      burst(a, out, t, { type: 'lowpass', freq: 200, freqEnd: 3000, attack: 0.35, decay: 1.1, gain: 0.45 });
+      for (let i = 0; i < 10; i++) flick(a, out, t + 0.2 + Math.random() * 1.1, 0.06 + Math.random() * 0.08);
+      const g = a.createGain();
+      g.gain.value = 0.5;
+      const lp = a.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 500;
+      g.connect(crunch(a, 4)).connect(lp).connect(out);
+      tone(a, g, t + 0.05, 70, 0.9, 0.25, 'sawtooth', 48);
+      tone(a, out, t + 0.1, 90, 0.25, 0.4, 'sine', 40);
+      tone(a, out, t + 0.45, 90, 0.25, 0.4, 'sine', 40);
+      break;
+    }
+    case 'aura': {
+      // Two seconds of Brazilian funk: distorted 808, claps and a cowbell hook (original, not a sample).
+      const step = 0.125; // 16th notes at 120 bpm → 16 steps = 2 s
+      const bus = a.createGain();
+      bus.gain.value = 0.9;
+      bus.connect(crunch(a, 3)).connect(out);
+      const kicks = [0, 3, 6, 8, 10, 13];
+      for (const k of kicks) tone(a, bus, t + k * step, 110, 0.32, 0.5, 'sine', 42);
+      for (const c of [4, 12]) {
+        burst(a, out, t + c * step, { type: 'bandpass', freq: 1400, q: 0.8, attack: 0.004, decay: 0.12, gain: 0.25 });
+        burst(a, out, t + c * step + 0.012, { type: 'bandpass', freq: 1100, q: 0.8, attack: 0.004, decay: 0.1, gain: 0.18 });
+      }
+      for (let h = 0; h < 16; h += 2) burst(a, out, t + h * step, { type: 'highpass', freq: 7000, attack: 0.003, decay: 0.03, gain: 0.05 });
+      // Cowbell-ish hook.
+      const hook: [number, number][] = [[0, 81], [2, 81], [3, 79], [5, 81], [7, 84], [8, 81], [10, 81], [11, 79], [13, 76], [14, 79]];
+      for (const [s, m] of hook) {
+        tone(a, out, t + s * step, midi(m), 0.11, 0.045, 'square');
+        tone(a, out, t + s * step, midi(m) * 1.48, 0.08, 0.02, 'square');
+      }
+      break;
+    }
+  }
+}

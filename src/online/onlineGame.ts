@@ -1,7 +1,7 @@
 import type { Action, GameState } from '../engine/types';
 import type { GameConnection } from '../game/connection';
 import { getIdentity } from './identity';
-import type { ClientMsg, RoomInfo, RoomSettings, ServerMsg, Visibility } from './protocol';
+import type { ClientMsg, Reaction, RoomInfo, RoomSettings, ServerMsg, Visibility } from './protocol';
 
 export type ConnStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -42,6 +42,7 @@ export class OnlineGame implements GameConnection {
   private listeners = new Set<() => void>();
   private errorListeners = new Set<(m: string) => void>();
   private infoListeners = new Set<(m: string) => void>();
+  private reactListeners = new Set<(playerId: string, r: Reaction) => void>();
   /** Players you already sent a friend request to from this table. */
   private befriended = new Set<string>();
   private retry = 0;
@@ -105,6 +106,18 @@ export class OnlineGame implements GameConnection {
     this.befriended.add(playerId);
     this.send({ t: 'friend', seatId: playerId });
     this.emit();
+  };
+
+  react = (r: Reaction) => {
+    this.send({ t: 'react', r });
+    for (const fn of this.reactListeners) fn(this.meId, r);
+  };
+
+  onReact = (fn: (playerId: string, r: Reaction) => void) => {
+    this.reactListeners.add(fn);
+    return () => {
+      this.reactListeners.delete(fn);
+    };
   };
 
   onInfo = (fn: (m: string) => void) => {
@@ -205,6 +218,9 @@ export class OnlineGame implements GameConnection {
       } else if (msg.t === 'state') {
         this.state = msg.state;
         this.deadline = msg.deadlineIn === null ? null : Date.now() + msg.deadlineIn;
+      } else if (msg.t === 'react') {
+        for (const fn of this.reactListeners) fn(msg.seatId, msg.r);
+        return;
       } else if (msg.t === 'info') {
         for (const fn of this.infoListeners) fn(msg.message);
       } else if (msg.t === 'error') {

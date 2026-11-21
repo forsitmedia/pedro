@@ -3878,3 +3878,259 @@ html {
 .btn--share.is-copied {
   background: #4ade80;
 }
+
+/* ───────────── reactions ───────────── */
+.reaction-bar {
+  position: fixed;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+.reaction-btn {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.12s;
+  filter: drop-shadow(0 3px 0 #1a1206);
+}
+.reaction-btn:not(:disabled):hover {
+  transform: scale(1.15) rotate(-6deg);
+}
+.reaction-btn:not(:disabled):active {
+  transform: scale(0.92);
+}
+.reaction-bar.is-cooling .reaction-btn {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (max-width: 760px) {
+  .reaction-bar {
+    top: auto;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 8px;
+    transform: none;
+    gap: 6px;
+    padding: 6px;
+  }
+  .reaction-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+/* Keep the hand clear of the bar on desktop. */
+@media (min-width: 761px) {
+  .table .felt {
+    padding-left: 80px;
+  }
+}
+
+/* The big face popping over a seat */
+.seat,
+.reveal-seat {
+  position: relative;
+}
+.reaction-pop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: clamp(84px, 11vw, 130px);
+  height: clamp(84px, 11vw, 130px);
+  z-index: 30;
+  pointer-events: none;
+  translate: -50% -50%;
+  animation: react-pop 2.6s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+}
+.reaction-pop > .avatar {
+  position: relative;
+  z-index: 1;
+}
+.reaction-pop-label {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  translate: -50% 0;
+  z-index: 2;
+  white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 2.5px solid #1a1206;
+  background: #fff;
+  color: #1a1206;
+  font-weight: 900;
+  font-size: clamp(0.75rem, 1.2vw, 0.95rem);
+  letter-spacing: 0.04em;
+  rotate: -4deg;
+}
+.reaction-pop--laugh .reaction-pop-label {
+  background: #ffe14d;
+}
+.reaction-pop--cry .reaction-pop-label {
+  background: #7cc8ff;
+}
+.reaction-pop--angry .reaction-pop-label {
+  background: #ff5a3c;
+  color: #fff;
+}
+.reaction-pop--aura .reaction-pop-label {
+  background: linear-gradient(90deg, #b48bff, #ff8fc7, #ffe14d);
+}
+.reaction-pop-glow {
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  z-index: 0;
+}
+.reaction-pop--aura .reaction-pop-glow {
+  background: conic-gradient(from 0deg, #b48bff, #ff8fc7, #ffe14d, #7cf0ff, #b48bff);
+  filter: blur(10px);
+  opacity: 0.85;
+  animation: aura-spin 1.2s linear infinite;
+}
+.reaction-pop--angry .reaction-pop-glow {
+  background: radial-gradient(circle, rgba(255, 80, 30, 0.85) 30%, rgba(255, 160, 0, 0) 70%);
+  animation: fire-flicker 0.18s ease-in-out infinite alternate;
+}
+.reaction-pop--cry .reaction-pop-glow {
+  background: radial-gradient(circle, rgba(124, 200, 255, 0.5) 30%, rgba(124, 200, 255, 0) 70%);
+}
+.reaction-pop--laugh .reaction-pop-glow {
+  background: radial-gradient(circle, rgba(255, 225, 77, 0.6) 30%, rgba(255, 225, 77, 0) 70%);
+}
+.reaction-pop--laugh {
+  animation-name: react-pop, react-bounce;
+  animation-duration: 2.6s, 0.32s;
+  animation-iteration-count: 1, infinite;
+}
+.reaction-pop--angry {
+  animation-name: react-pop, react-shake;
+  animation-duration: 2.6s, 0.12s;
+  animation-iteration-count: 1, infinite;
+}
+.reaction-pop--cry {
+  animation-name: react-pop, react-sob;
+  animation-duration: 2.6s, 0.9s;
+  animation-iteration-count: 1, infinite;
+}
+@keyframes react-pop {
+  0% {
+    scale: 0.2;
+    opacity: 0;
+  }
+  12% {
+    scale: 1.08;
+    opacity: 1;
+  }
+  20% {
+    scale: 1;
+  }
+  85% {
+    scale: 1;
+    opacity: 1;
+  }
+  100% {
+    scale: 0.6;
+    opacity: 0;
+  }
+}
+@keyframes react-bounce {
+  50% {
+    transform: translateY(-6px) rotate(4deg);
+  }
+}
+@keyframes react-shake {
+  25% {
+    transform: translate(-3px, 1px) rotate(-2deg);
+  }
+  75% {
+    transform: translate(3px, -1px) rotate(2deg);
+  }
+}
+@keyframes react-sob {
+  50% {
+    transform: translateY(3px) scaleY(0.97);
+  }
+}
+@keyframes aura-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes fire-flicker {
+  to {
+    scale: 1.08;
+    opacity: 0.75;
+  }
+}
+/* Inside the faces */
+.mood .tear-stream {
+  transform-box: fill-box;
+  transform-origin: top;
+  animation: tears 0.5s ease-in infinite;
+}
+.mood .tear-stream--2 {
+  animation-delay: 0.2s;
+}
+@keyframes tears {
+  0% {
+    transform: scaleY(0.2);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+.mood .joy-tear {
+  transform-box: fill-box;
+  animation: joy-tear 0.6s ease-in infinite;
+}
+.mood .joy-tear--2 {
+  animation-delay: 0.3s;
+}
+@keyframes joy-tear {
+  to {
+    transform: translate(0, 4px);
+    opacity: 0;
+  }
+}
+.mood .steam {
+  animation: steam 0.6s ease-out infinite;
+}
+@keyframes steam {
+  to {
+    transform: translateY(-4px);
+    opacity: 0.2;
+  }
+}
+.mood .sparkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sparkle 0.8s ease-in-out infinite;
+}
+.mood .sparkle--2 {
+  animation-delay: 0.25s;
+}
+.mood .sparkle--3 {
+  animation-delay: 0.5s;
+}
+@keyframes sparkle {
+  50% {
+    transform: scale(0.4) rotate(45deg);
+  }
+}
+.no-anim .reaction-pop {
+  animation: none;
+}

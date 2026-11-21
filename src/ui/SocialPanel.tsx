@@ -154,7 +154,20 @@ function Friends({ onJoin, notice }: { onJoin: Props['onJoin']; notice: { text: 
             </ul>
           )}
 
-          {me.sent.length > 0 && <p className="muted small">Waiting for: {me.sent.map((p) => p.name).join(', ')}</p>}
+          {me.sent.length > 0 && (
+            <>
+              <h4 className="social-title">Waiting for an answer</h4>
+              <ul className="people">
+                {me.sent.map((p) => (
+                  <Person key={p.id} p={p} sub="Request sent">
+                    <button className="mini-btn mini-btn--ghost" onClick={() => removeFriend(p.id)} title="Cancel request" aria-label={`Cancel request to ${p.name}`}>
+                      <Icon name="close" size={14} />
+                    </button>
+                  </Person>
+                ))}
+              </ul>
+            </>
+          )}
 
           {me.recent.length > 0 && (
             <>

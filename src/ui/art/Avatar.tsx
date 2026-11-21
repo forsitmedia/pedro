@@ -99,6 +99,8 @@ interface SpeciesArt {
   eyes: [number, number, number];
   /** Top of the head, for hats. */
   top: number;
+  /** For drawing emotions: colour around the eyes, mouth height, dark eye patches (draw lines in white). */
+  face: { skin: string; mouth: number; dark?: boolean };
 }
 
 const line = { stroke: INK, strokeWidth: 2, strokeLinejoin: 'round' as const };
@@ -107,6 +109,7 @@ const ART: Record<Species, SpeciesArt> = {
   frog: {
     top: 18,
     eyes: [22, 42, 24],
+    face: { skin: '#6cc644', mouth: 46 },
     body: (
       <>
         <ellipse cx="32" cy="41" rx="22" ry="15" fill="#6cc644" {...line} />
@@ -122,6 +125,7 @@ const ART: Record<Species, SpeciesArt> = {
   cat: {
     top: 18,
     eyes: [25, 39, 35],
+    face: { skin: '#f4a259', mouth: 46 },
     body: (
       <>
         <path d="M14 30 L16 10 L28 20 Z" fill="#f4a259" {...line} />
@@ -140,6 +144,7 @@ const ART: Record<Species, SpeciesArt> = {
   fox: {
     top: 17,
     eyes: [25, 39, 34],
+    face: { skin: '#e8743b', mouth: 47 },
     body: (
       <>
         <path d="M12 30 L14 8 L28 19 Z" fill="#e8743b" {...line} />
@@ -155,6 +160,7 @@ const ART: Record<Species, SpeciesArt> = {
   bear: {
     top: 18,
     eyes: [25, 39, 34],
+    face: { skin: '#a0704a', mouth: 46 },
     body: (
       <>
         <circle cx="16" cy="21" r="7.5" fill="#a0704a" {...line} />
@@ -172,6 +178,7 @@ const ART: Record<Species, SpeciesArt> = {
   panda: {
     top: 18,
     eyes: [25, 39, 35],
+    face: { skin: INK, mouth: 46, dark: true },
     body: (
       <>
         <circle cx="16" cy="21" r="7.5" fill={INK} />
@@ -192,6 +199,7 @@ const ART: Record<Species, SpeciesArt> = {
   bunny: {
     top: 20,
     eyes: [25, 39, 37],
+    face: { skin: '#f7f1ec', mouth: 48 },
     body: (
       <>
         <ellipse cx="23" cy="15" rx="6" ry="14" fill="#f7f1ec" {...line} />
@@ -209,6 +217,7 @@ const ART: Record<Species, SpeciesArt> = {
   alien: {
     top: 15,
     eyes: [24, 40, 34],
+    face: { skin: INK, mouth: 48, dark: true },
     body: (
       <>
         <path d="M24 16 L20 6 M40 16 L44 6" stroke={INK} strokeWidth={2} strokeLinecap="round" />
@@ -226,6 +235,7 @@ const ART: Record<Species, SpeciesArt> = {
   axolotl: {
     top: 20,
     eyes: [23, 41, 36],
+    face: { skin: '#ffaad4', mouth: 45 },
     body: (
       <>
         {[-1, 1].map((side) => (
@@ -245,6 +255,7 @@ const ART: Record<Species, SpeciesArt> = {
   capy: {
     top: 17,
     eyes: [23, 41, 31],
+    face: { skin: '#b07d4f', mouth: 49 },
     body: (
       <>
         <circle cx="17" cy="20" r="4.5" fill="#8a5a33" {...line} />
@@ -261,6 +272,7 @@ const ART: Record<Species, SpeciesArt> = {
   ghost: {
     top: 13,
     eyes: [25, 39, 31],
+    face: { skin: INK, mouth: 41, dark: true },
     body: (
       <>
         <path d="M14 34 C14 18 22 12 32 12 C42 12 50 18 50 34 V54 l-6 -4 l-6 4 l-6 -4 l-6 4 l-6 -4 l-6 4 Z" fill="#f7f7fb" {...line} />
@@ -340,6 +352,7 @@ export function Avatar({
   className,
   ring,
   bot,
+  mood,
 }: {
   code?: string | null;
   size?: number | string;
@@ -347,6 +360,8 @@ export function Avatar({
   ring?: boolean;
   /** A computer player: little robot badge in the corner. */
   bot?: boolean;
+  /** A reaction showing on the face right now. */
+  mood?: Mood | null;
 }) {
   const p = parseAvatar(code) ?? { species: 'frog' as Species, color: 0, acc: 'none' as Accessory };
   const art = ART[p.species];
@@ -355,6 +370,7 @@ export function Avatar({
       <circle cx="32" cy="32" r="31" fill={BG_COLORS[p.color]} />
       <g>{art.body}</g>
       <AccessoryArt acc={p.acc} art={art} />
+      {mood && <MoodLayer mood={mood} art={art} />}
       <circle cx="32" cy="32" r="30.5" fill="none" stroke={INK} strokeWidth={2.5} />
       {bot && <BotBadge />}
     </svg>
@@ -374,5 +390,110 @@ function BotBadge() {
       <circle cx="53.5" cy="48.2" r="1.7" fill={INK} stroke="none" />
       <path d="M46.5 52h7" strokeWidth={1.6} strokeLinecap="round" />
     </g>
+  );
+}
+
+/* ───────────── emotions (reactions) ───────────── */
+
+export type Mood = 'laugh' | 'cry' | 'angry' | 'aura';
+
+const Star = ({ x, y, r, className }: { x: number; y: number; r: number; className?: string }) => (
+  <path
+    className={className}
+    d={`M${x} ${y - r} Q${x + r * 0.22} ${y - r * 0.22} ${x + r} ${y} Q${x + r * 0.22} ${y + r * 0.22} ${x} ${y + r} Q${x - r * 0.22} ${y + r * 0.22} ${x - r} ${y} Q${x - r * 0.22} ${y - r * 0.22} ${x} ${y - r} Z`}
+    fill="#ffe14d"
+    stroke={INK}
+    strokeWidth={1.2}
+  />
+);
+
+/** Draws the emotion on top of any character's face. */
+function MoodLayer({ mood, art }: { mood: Mood; art: SpeciesArt }) {
+  const [x1, x2, y] = art.eyes;
+  const { skin, mouth: m, dark } = art.face;
+  const ink = dark ? '#fff' : INK;
+  const cover = (
+    <g fill={skin}>
+      <circle cx={x1} cy={y} r={6} />
+      <circle cx={x2} cy={y} r={6} />
+    </g>
+  );
+  const stroke = { fill: 'none', stroke: ink, strokeWidth: 2.4, strokeLinecap: 'round' as const };
+  switch (mood) {
+    case 'laugh':
+      return (
+        <g className="mood mood--laugh">
+          {cover}
+          {/* ^ ^ eyes squeezed shut from laughing */}
+          <path d={`M${x1 - 4} ${y + 1.5} Q${x1} ${y - 4} ${x1 + 4} ${y + 1.5} M${x2 - 4} ${y + 1.5} Q${x2} ${y - 4} ${x2 + 4} ${y + 1.5}`} {...stroke} />
+          <path d={`M24.5 ${m - 2} Q32 ${m + 11} 39.5 ${m - 2} Z`} fill={INK} stroke={INK} strokeWidth={1.5} strokeLinejoin="round" />
+          <ellipse cx="32" cy={m + 4.2} rx="3.6" ry="2" fill="#ff6b8a" />
+          <path className="joy-tear" d={`M${x1 - 7} ${y + 1} q-2.4 3.6 0 5 q2.4 -1.4 0 -5 Z`} fill="#7cc8ff" stroke={INK} strokeWidth={0.8} />
+          <path className="joy-tear joy-tear--2" d={`M${x2 + 7} ${y + 1} q-2.4 3.6 0 5 q2.4 -1.4 0 -5 Z`} fill="#7cc8ff" stroke={INK} strokeWidth={0.8} />
+        </g>
+      );
+    case 'cry':
+      return (
+        <g className="mood mood--cry">
+          {cover}
+          <path d={`M${x1 - 4} ${y - 1} Q${x1} ${y + 3} ${x1 + 4} ${y - 1} M${x2 - 4} ${y - 1} Q${x2} ${y + 3} ${x2 + 4} ${y - 1}`} {...stroke} />
+          {/* sad brows */}
+          <path d={`M${x1 - 4} ${y - 6} L${x1 + 3} ${y - 8} M${x2 + 4} ${y - 6} L${x2 - 3} ${y - 8}`} {...stroke} strokeWidth={1.8} />
+          <rect className="tear-stream" x={x1 - 1.6} y={y + 2} width="3.2" height="16" rx="1.6" fill="#7cc8ff" />
+          <rect className="tear-stream tear-stream--2" x={x2 - 1.6} y={y + 2} width="3.2" height="16" rx="1.6" fill="#7cc8ff" />
+          <path d={`M26 ${m + 3} Q29 ${m - 1} 32 ${m + 1.5} Q35 ${m - 1} 38 ${m + 3}`} fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" />
+        </g>
+      );
+    case 'angry':
+      return (
+        <g className="mood mood--angry">
+          <circle cx="32" cy="32" r="31" fill="#ff2d2d" opacity={0.22} />
+          <path d={`M${x1 - 6} ${y - 9} L${x1 + 4} ${y - 4.5} M${x2 + 6} ${y - 9} L${x2 - 4} ${y - 4.5}`} fill="none" stroke={INK} strokeWidth={3.2} strokeLinecap="round" />
+          <path d={`M26 ${m + 2.5} Q32 ${m - 3.5} 38 ${m + 2.5}`} fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round" />
+          <g className="steam" fill="#fff" stroke={INK} strokeWidth={1}>
+            <circle cx="8" cy="14" r="3.2" />
+            <circle cx="5" cy="9" r="2.2" />
+            <circle cx="56" cy="14" r="3.2" />
+            <circle cx="59" cy="9" r="2.2" />
+          </g>
+        </g>
+      );
+    case 'aura':
+      return (
+        <g className="mood mood--aura">
+          {/* cool shades */}
+          <g stroke={INK} strokeWidth={1.6} strokeLinejoin="round">
+            <rect x={x1 - 6.5} y={y - 4.5} width="13" height="8.5" rx="3" fill={INK} />
+            <rect x={x2 - 6.5} y={y - 4.5} width="13" height="8.5" rx="3" fill={INK} />
+            <path d={`M${x1 + 6.5} ${y - 2} H${x2 - 6.5}`} fill="none" />
+          </g>
+          <path d={`M${x1 - 4} ${y - 2.5} l3 -0 M${x2 - 4} ${y - 2.5} l3 0`} stroke="#fff" strokeWidth={1.4} strokeLinecap="round" />
+          <path d={`M27 ${m + 0.5} Q33 ${m + 3.5} 38.5 ${m - 2}`} fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
+          <Star x={9} y={13} r={4.5} className="sparkle" />
+          <Star x={55} y={16} r={3.5} className="sparkle sparkle--2" />
+          <Star x={54} y={50} r={4} className="sparkle sparkle--3" />
+        </g>
+      );
+  }
+}
+
+/** A plain yellow face showing a reaction (for the reaction buttons). */
+export function ReactionFace({ mood, size = 28 }: { mood: Mood; size?: number | string }) {
+  const art: SpeciesArt = { top: 14, eyes: [24, 40, 28], face: { skin: '#ffcc33', mouth: 42 }, body: null };
+  return (
+    <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden className="reaction-face">
+      <circle cx="32" cy="32" r="29" fill="#ffcc33" stroke={INK} strokeWidth={3} />
+      {mood === 'angry' && <circle cx="32" cy="32" r="29" fill="#ff4d2d" />}
+      {mood === 'aura' && <circle cx="32" cy="32" r="29" fill="#b48bff" />}
+      {/* The angry face keeps its eyes (only brows are added). */}
+      {mood === 'angry' && (
+        <g fill={INK}>
+          <circle cx="24" cy="30" r="3" />
+          <circle cx="40" cy="30" r="3" />
+        </g>
+      )}
+      <MoodLayer mood={mood} art={{ ...art, face: { ...art.face, skin: mood === 'angry' ? '#ff4d2d' : mood === 'aura' ? '#b48bff' : '#ffcc33' } }} />
+      <circle cx="32" cy="32" r="29" fill="none" stroke={INK} strokeWidth={3} />
+    </svg>
   );
 }

@@ -21,7 +21,9 @@ import { MUSIC_STYLES, setPrefs, usePrefs } from './prefs';
 import { Icon, IconButton } from './art/Icon';
 import { Avatar, avatarFor } from './art/Avatar';
 import { SettingsPanel } from './Personalize';
-import { play } from './sound';
+import { play, playReaction } from './sound';
+import { ReactionBar, ReactionPop, REACTION_MS } from './Reactions';
+import type { Reaction } from '../online/protocol';
 
 type Tone = 'info' | 'good' | 'bad' | 'big' | 'error';
 interface Toast {
@@ -174,6 +176,24 @@ export function GameTable({
   useEffect(() => game.onError?.((m) => toast(m, 'error')), [game]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => game.onInfo?.((m) => toast(m, 'info')), [game]); // eslint-disable-line react-hooks/exhaustive-deps
   const [, refresh] = useState(0);
+
+  // Reactions: who is laughing / crying / angry / flexing right now.
+  const [moods, setMoods] = useState<Record<string, { r: Reaction; until: number }>>({});
+  useEffect(
+    () =>
+      game.onReact?.((playerId, r) => {
+        playReaction(r);
+        const until = Date.now() + REACTION_MS;
+        setMoods((m) => ({ ...m, [playerId]: { r, until } }));
+        setTimeout(() => setMoods((m) => (m[playerId]?.until === until ? Object.fromEntries(Object.entries(m).filter(([k]) => k !== playerId)) : m)), REACTION_MS + 50);
+      }),
+    [game],
+  );
+  const moodOf = (id: string) => moods[id]?.r ?? null;
+  const reactionPop = (p: Player) => {
+    const r = moodOf(p.id);
+    return r ? <ReactionPop key={moods[p.id].until} code={avatarFor(p)} mood={r} bot={p.isBot} /> : null;
+  };
   const rects = useRef<Record<string, Rect>>({});
   const suppressClick = useRef(false);
 
@@ -675,7 +695,7 @@ export function GameTable({
               }}
             >
               <div className="seat-head">
-                <Avatar code={avatarFor(p)} size={28} className="seat-avatar" bot={p.isBot} />
+                <Avatar code={avatarFor(p)} size={28} className="seat-avatar" bot={p.isBot} mood={moodOf(p.id)} />
                 <span className="seat-name">{p.name}</span>
                 {game.canBefriend?.(p.id) && (
                   <button
@@ -698,6 +718,7 @@ export function GameTable({
                 {badges(p)}
               </div>
               {penaltyPop(p.id)}
+              {reactionPop(p)}
               {renderHand(p)}
               {s.drawn && cur.id === p.id && s.phase === 'drawn' && (
                 <div className="held held--opp">
@@ -760,7 +781,7 @@ export function GameTable({
           data-key="zone:me"
         >
           <div className="seat-head">
-            <Avatar code={avatarFor(me)} size={30} className="seat-avatar" />
+            <Avatar code={avatarFor(me)} size={30} className="seat-avatar" mood={moodOf(HUMAN_ID)} />
             <span className="seat-name">{me.name}</span>
             <span className="seat-score">
               {me.total}
@@ -774,6 +795,7 @@ export function GameTable({
             )}
           </div>
           {penaltyPop(HUMAN_ID)}
+          {reactionPop(me)}
           <div className="seat-body">
             <Hint
               meId={HUMAN_ID}
@@ -869,8 +891,20 @@ export function GameTable({
       )}
 
       {(s.phase === 'roundEnd' || s.phase === 'gameOver') && flights.length === 0 && (
-        <RoundReveal key={`${s.round}-${s.phase}`} meId={HUMAN_ID} restartLabel={restartLabel} s={s} onNext={() => run({ type: 'READY_NEXT', playerId: HUMAN_ID })} deadline={deadlineLeft} onRestart={onRestart} onExit={onExit} />
+        <RoundReveal
+          key={`${s.round}-${s.phase}`}
+          meId={HUMAN_ID}
+          restartLabel={restartLabel}
+          s={s}
+          onNext={() => run({ type: 'READY_NEXT', playerId: HUMAN_ID })}
+          deadline={deadlineLeft}
+          onRestart={onRestart}
+          onExit={onExit}
+          moodOf={moodOf}
+        />
       )}
+
+      {game.react && <ReactionBar onReact={(r) => game.react!(r)} />}
 
       {showRules && <Rules onClose={() => setShowRules(false)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}

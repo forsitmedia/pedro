@@ -1,4 +1,5 @@
 import type { Action, GameState } from '../engine/types';
+import type { Reaction } from '../online/protocol';
 
 /** What the game table needs, whether the game runs in this browser or on the server. */
 export interface GameConnection {
@@ -18,6 +19,9 @@ export interface GameConnection {
   /** Online: can you send this player a friend request from the table? */
   canBefriend?(playerId: string): boolean;
   befriend?(playerId: string): void;
+  /** Show a reaction (laugh, cry…) on your avatar, for everyone at the table. */
+  react?(r: Reaction): void;
+  onReact?(fn: (playerId: string, r: Reaction) => void): () => void;
   /** Online: good news for you ("Friend request sent"). */
   onInfo?(fn: (message: string) => void): () => void;
 }

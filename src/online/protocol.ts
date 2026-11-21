@@ -42,6 +42,10 @@ export const DEFAULT_SETTINGS: RoomSettings = {
   turnSeconds: 60,
 };
 
+/** Reactions players can send at the table. */
+export type Reaction = 'laugh' | 'cry' | 'angry' | 'aura';
+export const REACTIONS: Reaction[] = ['laugh', 'cry', 'angry', 'aura'];
+
 export interface SeatInfo {
   id: string;
   name: string;
@@ -209,6 +213,7 @@ export type ClientMsg =
       psecret?: string;
     }
   | { t: 'admit'; id: string; ok: boolean }
+  | { t: 'react'; r: Reaction }
   /** Send a friend request to the player in this seat. */
   | { t: 'friend'; seatId: string }
   | { t: 'settings'; settings: RoomSettings; visibility?: Visibility }
@@ -222,6 +227,8 @@ export type ServerMsg =
   /** deadlineIn: ms until the current human turn is auto-played (server and phone clocks differ, so it's relative). */
   | { t: 'state'; state: GameState; deadlineIn: number | null }
   | { t: 'error'; message: string; fatal?: boolean }
+  /** Someone at the table reacted. */
+  | { t: 'react'; seatId: string; r: Reaction }
   /** Good news for you only ("Friend request sent"). */
   | { t: 'info'; message: string }
   /** You knocked at a private table: waiting for the host. */

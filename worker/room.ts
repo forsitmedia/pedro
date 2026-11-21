@@ -10,6 +10,7 @@ import {
   QUICK_SEATS,
   QUICK_WAIT_MS,
   PLAYER_ID_RE,
+  REACTIONS,
   type ClientMsg,
   type GameReport,
   type JoinRequest,
@@ -79,6 +80,7 @@ export class PedroRoom extends DurableObject<Env> {
   private knocks = new Map<string, { req: JoinRequest; token: string; ws: WebSocket; pid?: string; psecret?: string }>();
   /** This game's results were already sent to the ranking. */
   private reported = false;
+  private lastReact = new Map<string, number>();
   private gameKey = '';
   private lastRound = 0;
   private knockSeq = 0;
@@ -142,6 +144,14 @@ export class PedroRoom extends DurableObject<Env> {
           .catch(() => this.send(ws, { t: 'error', message: "Couldn't send the friend request — try again." }));
         return;
       }
+      case 'react': {
+        // One reaction every 1.5 s per player is plenty.
+        const now = Date.now();
+        if (!REACTIONS.includes(msg.r) || now - (this.lastReact.get(seat.id) ?? 0) < 1500) return;
+        this.lastReact.set(seat.id, now);
+        for (const [other, c] of this.conns) if (c.seatId && c.seatId !== seat.id) this.send(other, { t: 'react', seatId: seat.id, r: msg.r });
+        return;
+      }
       case 'admit':
         if (seat.id !== this.hostId) return;
         return this.admit(String(msg.id), !!msg.ok);
@@ -183,10 +193,7 @@ export class PedroRoom extends DurableObject<Env> {
       seat = this.addSeat(token, msg.name, avatar);
     }
     if (avatar) seat.avatar = avatar;
-    if (pid) {
-      seat.pid = pid;
-      seat.psecret = psecret;
-    }
+    if (pid && psecret) this.registerSeat(seat, pid, psecret);
     seat.connected = true;
     conn.seatId = seat.id;
     this.broadcastRoom();
@@ -233,8 +240,7 @@ export class PedroRoom extends DurableObject<Env> {
       return this.broadcastRoom();
     }
     const seat = this.addSeat(k.token, k.req.name, k.req.avatar);
-    seat.pid = k.pid;
-    seat.psecret = k.psecret;
+    if (k.pid && k.psecret) this.registerSeat(seat, k.pid, k.psecret);
     conn.seatId = seat.id;
     this.broadcastRoom();
   }
@@ -397,6 +403,24 @@ export class PedroRoom extends DurableObject<Env> {
   private broadcastRoom() {
     for (const [ws, c] of this.conns) if (c.seatId) this.send(ws, { t: 'room', room: this.roomInfo(c.seatId), you: c.seatId });
     this.scheduleReport();
+  }
+
+  /** Link the seat to the player's online profile (created now if they came straight from a link). */
+  private registerSeat(seat: Seat, pid: string, psecret: string) {
+    if (seat.pid === pid && seat.psecret === psecret) return;
+    seat.pid = pid;
+    seat.psecret = psecret;
+    void this.lobby()
+      .register(pid, psecret, seat.name, seat.avatar)
+      .then((ok) => {
+        // Someone else's id: this seat won't count for friends or the ranking.
+        if (!ok && seat.pid === pid) {
+          seat.pid = undefined;
+          seat.psecret = undefined;
+          this.broadcastRoom();
+        }
+      })
+      .catch(() => {});
   }
 
   /** New round → update the lobby. Game over → send the results to the weekly ranking. */

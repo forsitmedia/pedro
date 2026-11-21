@@ -224,6 +224,25 @@ export class PedroLobby extends DurableObject<Env> {
     return text;
   }
 
+  /**
+   * Someone sat down at a table: make sure they have a profile, even if they never opened the home page
+   * (a friend who came straight from a WhatsApp link). Returns false if the id belongs to someone else.
+   */
+  async register(id: string, secret: string, name: string, avatar?: string): Promise<boolean> {
+    if (!PLAYER_ID_RE.test(id) || typeof secret !== 'string' || secret.length < 16) return false;
+    const h = await hash(secret.slice(0, 64));
+    const row = this.sql.exec<{ secret: string }>('SELECT secret FROM players WHERE id = ?', id).toArray()[0];
+    const now = Date.now();
+    const av = typeof avatar === 'string' && /^[a-z]{2,10}\.\d\.[a-z]{2,12}$/.test(avatar) ? avatar : null;
+    if (!row) {
+      this.sql.exec('INSERT INTO players (id, secret, name, avatar, created, seen) VALUES (?, ?, ?, ?, ?, ?)', id, h, cleanName(name), av, now, now);
+      return true;
+    }
+    if (row.secret !== h) return false;
+    this.sql.exec('UPDATE players SET seen = ? WHERE id = ?', now, id);
+    return true;
+  }
+
   /** Friend request from inside a game (the room vouches for the table, we check the secret). */
   async requestFriend(from: string, secret: string, to: string): Promise<string> {
     const row = this.sql.exec<{ secret: string }>('SELECT secret FROM players WHERE id = ?', from).toArray()[0];
