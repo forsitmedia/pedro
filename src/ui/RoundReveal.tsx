@@ -1,0 +1,256 @@
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { cardName, cardValue } from '../engine/cards';
+import { getPlayer } from '../engine/engine';
+import type { GameState, RoundResult } from '../engine/types';
+import { CardView } from './CardView';
+import { usePrefs } from './prefs';
+import { play } from './sound';
+
+/**
+ * End of a round, like at a real table: everyone turns their cards over one by one
+ * (the Pedro caller first), the verdict on the Pedro call, the round winner full screen,
+ * and at the end of the game the Pedro Championship with its cup.
+ */
+
+type Step = { kind: 'flip'; player: number; card: number; wait: number } | { kind: 'verdict' | 'winner' | 'champion' | 'table'; wait: number };
+
+const FLIP_MS = 650;
+const BETWEEN_PLAYERS_MS = 900;
+
+const systemReducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+export function RoundReveal({
+  s,
+  meId,
+  restartLabel,
+  onNext,
+  onRestart,
+  onExit,
+}: {
+  s: GameState;
+  meId: string;
+  restartLabel: string;
+  onNext: () => void;
+  onRestart: () => void;
+  onExit: () => void;
+}) {
+  const prefs = usePrefs();
+  const over = s.phase === 'gameOver';
+  const results = s.results ?? [];
+  const nameOf = (id: string) => (id === meId && getPlayer(s, id)?.name === 'You' ? 'You' : (getPlayer(s, id)?.name ?? '?'));
+
+  // The Pedro caller shows first, then the others in seat order.
+  const order: RoundResult[] = useMemo(() => {
+    const callerIdx = s.pedro ? results.findIndex((r) => r.playerId === s.pedro!.callerId) : -1;
+    const start = callerIdx >= 0 ? callerIdx : 0;
+    return results.map((_, i) => results[(start + i) % results.length]);
+  }, [s.round, s.phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const steps: Step[] = useMemo(() => {
+    const out: Step[] = [];
+    order.forEach((r, i) => {
+      if (!r.cards.length) out.push({ kind: 'flip', player: i, card: -1, wait: i === 0 ? 900 : BETWEEN_PLAYERS_MS });
+      r.cards.forEach((_, j) => out.push({ kind: 'flip', player: i, card: j, wait: j === 0 ? (i === 0 ? 900 : BETWEEN_PLAYERS_MS) : FLIP_MS }));
+    });
+    out.push({ kind: 'verdict', wait: 1000 });
+    out.push({ kind: 'winner', wait: s.pedro && !s.pedro.auto ? 2200 : 1400 });
+    if (over) out.push({ kind: 'champion', wait: 3200 });
+    out.push({ kind: 'table', wait: over ? 999_999 : 3200 }); // the champion screen waits for a tap
+    return out;
+  }, [order, over]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const skipAll = !prefs.animations || systemReducedMotion();
+  /** How many steps have happened. */
+  // Without animations: straight to the scores (or to the cup at the end of the game).
+  const [done, setDone] = useState(skipAll ? (over ? steps.findIndex((x) => x.kind === 'champion') + 1 : steps.length) : 0);
+  const caller = s.pedro && !s.pedro.auto ? results.find((r) => r.playerId === s.pedro!.callerId) : undefined;
+  const pedroFailed = !!caller?.penalty;
+
+  useEffect(() => {
+    if (done >= steps.length) return;
+    const st = steps[done];
+    const t = setTimeout(() => {
+      if (st.kind === 'flip') play('flip');
+      if (st.kind === 'verdict' && s.pedro && !s.pedro.auto) play(pedroFailed ? 'wrong' : 'snap');
+      if (st.kind === 'winner' || st.kind === 'champion') play('pedro');
+      setDone((d) => d + 1);
+    }, st.wait);
+    return () => clearTimeout(t);
+  }, [done, steps]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reached = (kind: Step['kind']) => steps.slice(0, done).some((x) => x.kind === kind);
+  const flipped = (player: number, card: number) =>
+    steps.slice(0, done).some((x) => x.kind === 'flip' && ((x.player === player && x.card >= card) || x.player > player));
+
+  const roundScore = (r: RoundResult) => r.sum + r.penalty;
+  const bestRound = Math.min(...results.map(roundScore));
+  const roundWinners = results.filter((r) => roundScore(r) === bestRound);
+  const ranking = [...s.players].sort((a, b) => a.total - b.total);
+  const champions = ranking.filter((p) => p.total === ranking[0].total);
+
+  const stage = reached('table') ? 'table' : reached('champion') ? 'champion' : reached('winner') ? 'winner' : 'reveal';
+  // Skip the suspense: straight to the cup (game over) or to the scores.
+  const toTable = () => setDone(steps.length);
+
+  return (
+    <div className="reveal-screen" role="dialog" aria-label={`Round ${s.round} results`}>
+      {(stage === 'reveal' || stage === 'winner') && (
+        <div className="reveal">
+          <header className="reveal-head">
+            <h2>Round {s.round} — show your cards!</h2>
+            {s.pedro && (
+              <p className="reveal-caller">
+                {s.pedro.auto ? `${nameOf(s.pedro.callerId)} ran out of cards` : `${nameOf(s.pedro.callerId)} called PEDRO!`}
+              </p>
+            )}
+            <button className="btn reveal-skip" onClick={() => setDone(over ? steps.findIndex((x) => x.kind === 'champion') + 1 : steps.length)}>
+              Skip ▸
+            </button>
+          </header>
+          <div className="reveal-rows">
+            {order.map((r, i) => {
+              const shownCards = r.cards.filter((_, j) => flipped(i, j));
+              const running = shownCards.reduce((n, c) => n + cardValue(c), 0);
+              const complete = r.cards.length === 0 ? flipped(i, -1) : shownCards.length === r.cards.length;
+              const verdict = reached('verdict');
+              const isCaller = caller?.playerId === r.playerId;
+              const isWinner = verdict && roundScore(r) === bestRound;
+              return (
+                <div
+                  key={r.playerId}
+                  className={`reveal-row ${complete ? 'is-done' : ''} ${isWinner ? 'is-winner' : ''} ${r.playerId === meId ? 'is-me' : ''}`}
+                >
+                  <div className="reveal-name">
+                    {isWinner && <span aria-hidden>👑 </span>}
+                    {nameOf(r.playerId)}
+                    {isCaller && <span className="badge badge--pedro">PEDRO</span>}
+                  </div>
+                  <div className="reveal-cards">
+                    {r.cards.length === 0 && <span className="reveal-empty">no cards left!</span>}
+                    {r.cards.map((c, j) => (
+                      <CardView key={c.id} card={c} faceUp={flipped(i, j)} title={cardName(c)} />
+                    ))}
+                  </div>
+                  <div className="reveal-score">
+                    <span key={running} className="reveal-sum">
+                      {flipped(i, 0) || r.cards.length === 0 ? running : '?'}
+                    </span>
+                    {verdict && isCaller && (
+                      <span className={`reveal-stamp ${pedroFailed ? 'is-bad' : 'is-good'}`}>{pedroFailed ? `+${r.penalty} PEDRO FAILED` : '✓ PEDRO!'}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {stage === 'winner' && (
+        <button className="reveal-splash" onClick={() => setDone(steps.findIndex((x) => x.kind === 'winner') + 1)}>
+          <span className="reveal-splash-kicker">Round {s.round} winner</span>
+          <span className="reveal-splash-name">{roundWinners.map((r) => nameOf(r.playerId)).join(' & ')}</span>
+          <span className="reveal-splash-sub">
+            with {bestRound} point{Math.abs(bestRound) === 1 ? '' : 's'}
+            {caller && pedroFailed && ` · ${nameOf(caller.playerId) === 'You' ? 'Your' : `${nameOf(caller.playerId)}'s`} Pedro failed: +${caller.penalty}`}
+          </span>
+          <span className="reveal-tap">tap to continue</span>
+        </button>
+      )}
+
+      {stage === 'champion' && (
+        <button className="reveal-splash reveal-splash--champion" onClick={toTable}>
+          <span className="reveal-confetti" aria-hidden>
+            {Array.from({ length: 28 }, (_, i) => (
+              <i
+                key={i}
+                style={
+                  {
+                    '--i': i,
+                    '--x': `${(i * 37) % 100}%`,
+                    '--dur': `${2.6 + ((i * 7) % 10) * 0.18}s`,
+                    '--delay': `${-((i * 13) % 28) * 0.13}s`,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </span>
+          <span className="reveal-splash-kicker">The Pedro Championship</span>
+          <span className="reveal-cup" aria-hidden>
+            🏆
+          </span>
+          <span className="reveal-splash-name">{champions.map((p) => nameOf(p.id)).join(' & ')}</span>
+          <span className="reveal-splash-sub">
+            {champions.length > 1 ? 'share the title' : 'is the champion'} with {champions[0].total} point{champions[0].total === 1 ? '' : 's'}
+          </span>
+          <span className="reveal-tap">tap to see the final scores</span>
+        </button>
+      )}
+
+      {stage === 'table' && (
+        <div className="standings">
+          <h2>{over ? `🏆 ${champions.map((p) => nameOf(p.id)).join(' & ')} — Pedro champion${champions.length > 1 ? 's' : ''}!` : `After round ${s.round}`}</h2>
+          <div className="standings-list">
+            {[...results]
+              .sort((a, b) => a.total - b.total)
+              .map((r, place) => (
+                <div key={r.playerId} className={`standings-row ${r.playerId === meId ? 'is-me' : ''} ${roundScore(r) === bestRound ? 'is-best' : ''}`}>
+                  <span className="standings-place">{over && place === 0 ? '🏆' : place + 1}</span>
+                  <span className="standings-name">{nameOf(r.playerId)}</span>
+                  <span className="standings-cards">
+                    {r.cards.length
+                      ? r.cards.map((c) => (
+                          <span key={c.id} className={`mini ${c.suit === 'H' || c.suit === 'D' ? 'is-red' : ''}`}>
+                            {cardName(c)}
+                          </span>
+                        ))
+                      : '—'}
+                  </span>
+                  <span className="standings-round">
+                    +{r.sum}
+                    {r.penalty ? <span className="penalty"> +{r.penalty}</span> : null}
+                  </span>
+                  <span className="standings-total">{r.total}</span>
+                  {s.settings.limit && <Progress before={r.total - r.sum - r.penalty} after={r.total} limit={s.settings.limit} />}
+                </div>
+              ))}
+          </div>
+          <div className="buttons standings-buttons">
+            {over ? (
+              <>
+                <button className="btn btn--primary" onClick={onRestart}>
+                  {restartLabel}
+                </button>
+                <button className="btn" onClick={onExit}>
+                  Menu
+                </button>
+              </>
+            ) : (
+              <button className="btn btn--primary" onClick={onNext}>
+                Next round
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Progress({ before, after, limit }: { before: number; after: number; limit: number }) {
+  const pct = (x: number) => `${Math.min(100, Math.max(0, (x / limit) * 100))}%`;
+  const lost = after >= limit;
+  const danger = !lost && after >= limit * 0.7;
+  const b = Math.max(0, Math.min(before, after));
+  return (
+    <span className="standings-progress">
+      <span className={`progress ${lost ? 'is-lost' : danger ? 'is-danger' : ''}`}>
+        <span className="progress-before" style={{ width: pct(b) }} />
+        <span className="progress-add" style={{ left: pct(b), width: pct(Math.max(0, after - b)) }} />
+      </span>
+      <span className="progress-text">
+        {after} / {limit}
+      </span>
+    </span>
+  );
+}

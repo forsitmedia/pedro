@@ -20,7 +20,8 @@ export function viewFor(state: GameState, viewerId: string): GameState {
   s.known = { [viewerId]: s.known[viewerId] ?? [] };
   s.events = s.events.slice(-EVENTS_SENT).map((e) => {
     if (!e.reveal || e.reveal.to === 'all' || e.reveal.to.includes(viewerId)) return e;
-    return { ...e, reveal: undefined };
+    // Others still learn THAT a card was looked at (and which one), never its face.
+    return { ...e, reveal: { to: e.reveal.to, cards: e.reveal.cards.map((r) => ({ ref: r.ref, card: hide(r.card) })) } };
   });
   return s;
 }

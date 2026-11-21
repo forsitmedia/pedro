@@ -159,7 +159,9 @@ function endRound(s: GameState, ctx: Ctx) {
 
 function dealRound(s: GameState, ctx: Ctx) {
   s.round += 1;
-  s.deck = shuffle(makeDeck(() => newId(s)), ctx.rng);
+  // Ids are given AFTER shuffling: online, hidden cards keep their id, so ids must say nothing about the card.
+  s.deck = shuffle(makeDeck(() => ''), ctx.rng);
+  for (const c of s.deck) c.id = newId(s);
   s.discard = [];
   s.topBurned = false;
   s.snap = { eventId: s.snap.eventId + 1, open: false, closedAt: 0 };
@@ -443,6 +445,19 @@ export function apply(state: GameState, action: Action, ctx: Ctx): ApplyResult {
       if (!top) return fail('There is nothing on the discard pile yet.');
       const owner = getPlayer(s, action.target.playerId);
       const c = owner?.hand[action.target.slot];
+      // Someone else threw (or moved) the card you were dragging before your throw arrived.
+      if (action.cardId && c?.id !== action.cardId) {
+        const thrownAlready = s.topBurned && top.id === action.cardId && !s.snap.open && s.snap.by !== actor.id;
+        if (!thrownAlready) return fail('That card has moved — throw cancelled.');
+        log(s, ctx, {
+          kind: 'snapSlow',
+          actorId: actor.id,
+          card: top,
+          text: `${actor.name} tried to throw the same ${cardName(top)} but ${nameOf(s, s.snap.by!)} was faster.`,
+        });
+        givePenalty(s, ctx, actor.id, 1, 'too slow', { reason: 'slow', byId: s.snap.by });
+        return done();
+      }
       if (!owner || !c) return fail('Choose a card to throw.');
       const ref = action.target;
       const whose = owner.id === actor.id ? 'their' : `${owner.name}'s`;

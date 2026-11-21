@@ -130,7 +130,8 @@ export type Action =
   | { type: 'DISCARD'; playerId: string }
   | { type: 'POWER'; playerId: string; target?: SlotRef; target2?: SlotRef; targetPlayerId?: string }
   | { type: 'SKIP_POWER'; playerId: string }
-  | { type: 'SNAP'; playerId: string; target: SlotRef }
+  /** `cardId`: the card the player meant to throw — if it's gone by the time the throw arrives, they were too slow. */
+  | { type: 'SNAP'; playerId: string; target: SlotRef; cardId?: string }
   | { type: 'NEXT_ROUND' };
 
 export interface Ctx {

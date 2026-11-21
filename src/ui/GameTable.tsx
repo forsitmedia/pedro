@@ -15,6 +15,9 @@ import { isHidden } from '../engine/view';
 import { CardView } from './CardView';
 import { flightsFor, FlightView, heldKey, measure, slotKey, type Flight, type Rect } from './flights';
 import { Rules } from './Rules';
+import { RoundReveal } from './RoundReveal';
+import { setPrefs, usePrefs } from './prefs';
+import { play } from './sound';
 
 type Tone = 'info' | 'good' | 'bad' | 'big' | 'error';
 interface Toast {
@@ -81,9 +84,12 @@ function gridPos(i: number): CSSProperties {
   return { gridRow: (j % 2) + 1, gridColumn: 3 + Math.floor(j / 2) };
 }
 
-const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const systemReducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let toastSeq = 0;
+
+/** A real Pedro call (by a player, or automatic) — not "another player also ran out of cards". */
+const isPedroCall = (e: { kind: EventKind; actorId?: string; text: string }) => e.kind === 'pedro' && !!e.actorId && e.text.includes('PEDRO');
 
 export function GameTable({
   game,
@@ -98,6 +104,8 @@ export function GameTable({
 }) {
   const HUMAN_ID = game.meId;
   const s = useSyncExternalStore(game.subscribe, game.getState);
+  const prefs = usePrefs();
+  const reducedMotion = () => !prefs.animations || systemReducedMotion();
   const me = getPlayer(s, HUMAN_ID)!;
   const cur = currentPlayer(s);
   const [now, setNow] = useState(Date.now());
@@ -129,6 +137,10 @@ export function GameTable({
   const [penalties, setPenalties] = useState<Record<string, { until: number; n: number; why: string }>>({});
   /** Cards that were wrongly thrown and came back (red glow, face-up). */
   const [rejected, setRejected] = useState<Record<string, number>>({});
+  /** A card was just burned (thrown correctly): flames on the pile. */
+  const [burnAt, setBurnAt] = useState<{ from: number; until: number } | null>(null);
+  /** Someone called Pedro: big announcement across the table. */
+  const [pedroSplash, setPedroSplash] = useState<{ until: number; title: string; sub: string } | null>(null);
   // Only react to events that happen from now on: after a refresh or rejoin,
   // old ones (like the peek at the start) must not be replayed.
   const lastSeen = useRef(s.phase === 'peek' && !s.peeked[game.meId] ? 0 : s.seq);
@@ -161,6 +173,38 @@ export function GameTable({
     const id = ++toastSeq;
     setToasts((ts) => [...ts.slice(-2), { id, text, tone }]);
     setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), tone === 'big' ? 4500 : 3800);
+  };
+
+  /** A sound for each move, timed to land with its animation. */
+  const soundFor = (e: (typeof s.events)[number], powerHold: number) => {
+    const anim = !reducedMotion();
+    switch (e.kind) {
+      case 'deal':
+        return play('shuffle');
+      case 'draw':
+        return play('draw');
+      case 'swap':
+      case 'takeDiscard':
+        play('flip', anim ? 450 : 0);
+        return play('place', anim ? 1150 : 0);
+      case 'discard':
+        return play('place', anim ? 150 + powerHold + 400 : 0);
+      case 'snap':
+        return play('burn', anim ? 350 : 0);
+      case 'snapWrong':
+      case 'snapSlow':
+        return play('wrong', anim ? 450 : 0);
+      case 'penalty':
+        return play('penalty', anim ? 1500 : 0);
+      case 'reshuffle':
+        return play('shuffle');
+      case 'pedro':
+        return isPedroCall(e) ? play('pedro') : play('place');
+      case 'power':
+        if (e.reveal) return play('peek');
+        if (e.slots?.length === 2 && e.slots[0].playerId !== e.slots[1].playerId) return play('swap', anim ? 300 : 0);
+        return play('shuffle');
+    }
   };
 
   // New game events → reveals, flashes, toasts and flying cards.
@@ -227,7 +271,7 @@ export function GameTable({
       }
       for (const r of e.slots ?? []) fl[keyOfRef(r)] = t + 1800;
       const tone = TOAST_TONE[e.kind];
-      if (tone && !(e.kind === 'power' && e.actorId === HUMAN_ID)) toast(youify(e.text, me.name), tone);
+      if (tone && !(e.kind === 'power' && e.actorId === HUMAN_ID) && !isPedroCall(e)) toast(youify(e.text, me.name), tone);
       if (!reducedMotion() && fresh.length < 12) {
         const fs = flightsFor(e, s, rects.current, curRects, HUMAN_ID, e.kind === 'discard' ? powerHold : 0, faceOf);
         newFlights.push(...fs);
@@ -240,10 +284,25 @@ export function GameTable({
           }
         }
       }
+      if (e.kind === 'snap') {
+        const from = t + (reducedMotion() ? 0 : 350);
+        setBurnAt({ from, until: from + 1400 });
+      }
+      if (isPedroCall(e) && e.actorId) {
+        const who = getPlayer(s, e.actorId);
+        const mine = e.actorId === HUMAN_ID;
+        setPedroSplash({
+          until: t + 2800,
+          title: 'PEDRO!',
+          sub: mine ? (me.name === 'You' ? 'You called it!' : `${me.name}, you called it!`) : `${who?.name ?? ''} ${/no cards left/.test(e.text) ? 'has no cards left' : 'called it'} — last round!`,
+        });
+      }
+      if (fresh.length < 12) soundFor(e, powerHold);
       if (e.kind === 'discard') powerHold = 0;
     }
     // Only hold back the *start* of your turn — never block you in the middle of it.
     const turnPassedToMe = fresh.some((e) => (e.kind === 'turn' || e.kind === 'start') && e.actorId === HUMAN_ID);
+    if (turnPassedToMe && fresh.length < 12) play('turn', Math.max(0, gateEnd - t));
     if (turnPassedToMe && gateEnd > t) setGate({ until: gateEnd + 150, actorId: gateActor });
     setReveals((r) => ({ ...r, ...rv }));
     setFlashes((f) => ({ ...f, ...fl }));
@@ -260,6 +319,18 @@ export function GameTable({
       });
     }
   }, [s.seq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The start-of-round peek stays face-up until you're ready. If the timer made you ready
+  // (you didn't tap "I've got them"), give a short last look, then turn them face down.
+  const imReady = s.phase !== 'peek' || !!s.ready[HUMAN_ID];
+  useEffect(() => {
+    if (!imReady) return;
+    setReveals((r) => {
+      if (!Object.values(r).includes(Infinity)) return r;
+      const until = Date.now() + 2500;
+      return Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v === Infinity ? until : v]));
+    });
+  }, [imReady, s.seq]);
 
   // Remember where everything is, for the next animation.
   useLayoutEffect(() => {
@@ -414,7 +485,7 @@ export function GameTable({
 
   const onDrop = (src: DragSrc, key: string) => {
     const slot = key.startsWith(`slot:${HUMAN_ID}:`) ? Number(key.split(':')[2]) : -1;
-    if (src.kind === 'slot' && key === 'discard') run({ type: 'SNAP', playerId: HUMAN_ID, target: src.ref });
+    if (src.kind === 'slot' && key === 'discard') run({ type: 'SNAP', playerId: HUMAN_ID, target: src.ref, cardId: src.card.id });
     else if (src.kind === 'held' && key === 'discard') discardHeld();
     else if (src.kind === 'held' && slot >= 0) run({ type: 'SWAP', playerId: HUMAN_ID, slot });
     else if (src.kind === 'discard' && slot >= 0) run({ type: 'TAKE_DISCARD', playerId: HUMAN_ID, slot });
@@ -543,7 +614,7 @@ export function GameTable({
   const discardActive = myTurn && (s.phase === 'drawn' || s.phase === 'power' || (s.phase === 'turnStart' && !!top && !s.topBurned));
 
   return (
-    <div className="table">
+    <div className={`table ${prefs.animations ? '' : 'no-anim'}`}>
       <header className="topbar">
         <button className="link" onClick={onExit}>
           ← Menu
@@ -551,9 +622,35 @@ export function GameTable({
         <div className="title">
           PEDRO <span className="round">Round {s.round}</span>
         </div>
-        <button className="link" onClick={() => setShowRules(true)}>
-          Rules
-        </button>
+        <div className="topbar-right">
+          <button
+            className={`toggle ${prefs.sound ? '' : 'is-off'}`}
+            onClick={() => setPrefs({ sound: !prefs.sound })}
+            title={prefs.sound ? 'Sound on — tap to mute' : 'Sound off — tap to turn on'}
+            aria-pressed={prefs.sound}
+          >
+            {prefs.sound ? '🔊' : '🔇'} <span className="toggle-label">Sound</span>
+          </button>
+          <button
+            className={`toggle ${prefs.music ? '' : 'is-off'}`}
+            onClick={() => setPrefs({ music: !prefs.music })}
+            title={prefs.music ? 'Music on — tap to turn off' : 'Music off — tap to turn on'}
+            aria-pressed={prefs.music}
+          >
+            🎵 <span className="toggle-label">Music</span>
+          </button>
+          <button
+            className={`toggle ${prefs.animations ? '' : 'is-off'}`}
+            onClick={() => setPrefs({ animations: !prefs.animations })}
+            title={prefs.animations ? 'Animations on — tap to turn off' : 'Animations off — tap to turn on'}
+            aria-pressed={prefs.animations}
+          >
+            {prefs.animations ? '✨' : '⏸'} <span className="toggle-label">Animations</span>
+          </button>
+          <button className="link" onClick={() => setShowRules(true)}>
+            Rules
+          </button>
+        </div>
       </header>
 
       <main className={`felt felt--n${opponents.length}`}>
@@ -621,6 +718,13 @@ export function GameTable({
                 onPointerDown={(e) => top && startDrag(e, { kind: 'discard', card: top })}
               />
               {s.topBurned && !discardHidden && <span className="burned">🔥</span>}
+              {burnAt && now >= burnAt.from - 250 && now < burnAt.until && (
+                <span key={burnAt.from} className="burn-fx" aria-hidden>
+                  <span>🔥</span>
+                  <span>🔥</span>
+                  <span>🔥</span>
+                </span>
+              )}
             </div>
             <span className="pile-label">{s.topBurned && !discardHidden ? 'Burned' : 'Discard'}</span>
           </div>
@@ -645,6 +749,21 @@ export function GameTable({
           </div>
           {penaltyPop(HUMAN_ID)}
           <div className="seat-body">
+            <Hint
+              meId={HUMAN_ID}
+              deadline={deadlineLeft}
+              s={s}
+              myTurn={myTurn}
+              shownCurName={getPlayer(s, shownCurId)?.name ?? ''}
+              takeMode={takeMode}
+              nineFirst={nineFirst}
+              activePower={activePower}
+              onReady={() => {
+                setReveals((r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== Infinity)));
+                setPeekSel([]);
+                run({ type: 'READY', playerId: HUMAN_ID });
+              }}
+            />
             {renderHand(me)}
             {held && (
               <div className="held held--me">
@@ -661,21 +780,6 @@ export function GameTable({
               </div>
             )}
           </div>
-          <Hint
-            meId={HUMAN_ID}
-            deadline={deadlineLeft}
-            s={s}
-            myTurn={myTurn}
-            shownCurName={getPlayer(s, shownCurId)?.name ?? ''}
-            takeMode={takeMode}
-            nineFirst={nineFirst}
-            activePower={activePower}
-            onReady={() => {
-              setReveals((r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== Infinity)));
-              setPeekSel([]);
-              run({ type: 'READY', playerId: HUMAN_ID });
-            }}
-          />
         </section>
       </main>
 
@@ -715,6 +819,13 @@ export function GameTable({
         ))}
       </div>
 
+      {pedroSplash && pedroSplash.until > now && (
+        <div key={pedroSplash.until} className="pedro-splash" aria-live="assertive">
+          <div className="pedro-splash-title">{pedroSplash.title}</div>
+          <div className="pedro-splash-sub">{pedroSplash.sub}</div>
+        </div>
+      )}
+
       {flights.map((f) => (
         <FlightView key={f.id} f={f} onDone={onFlightDone} />
       ))}
@@ -729,7 +840,7 @@ export function GameTable({
       )}
 
       {(s.phase === 'roundEnd' || s.phase === 'gameOver') && flights.length === 0 && (
-        <RoundSummary meId={HUMAN_ID} restartLabel={restartLabel} s={s} onNext={() => run({ type: 'NEXT_ROUND' })} onRestart={onRestart} onExit={onExit} />
+        <RoundReveal key={`${s.round}-${s.phase}`} meId={HUMAN_ID} restartLabel={restartLabel} s={s} onNext={() => run({ type: 'NEXT_ROUND' })} onRestart={onRestart} onExit={onExit} />
       )}
 
       {showRules && <Rules onClose={() => setShowRules(false)} />}
@@ -796,119 +907,11 @@ function Hint(props: {
   }
 
   return (
-    <div className="actionbar">
+    <div className={`actionbar ${myTurn || (s.phase === 'peek' && !s.ready[HUMAN_ID]) ? 'is-urgent' : ''}`}>
       <p className="hint">
         {props.deadline !== null && props.deadline <= 20 && <span className="timer">⏱ {props.deadline}s</span>} {text}
       </p>
       {button}
     </div>
-  );
-}
-
-function RoundSummary({
-  meId: HUMAN_ID,
-  restartLabel,
-  s,
-  onNext,
-  onRestart,
-  onExit,
-}: {
-  meId: string;
-  restartLabel: string;
-  s: GameState;
-  onNext: () => void;
-  onRestart: () => void;
-  onExit: () => void;
-}) {
-  const results = s.results ?? [];
-  const over = s.phase === 'gameOver';
-  const ranking = [...s.players].sort((a, b) => a.total - b.total);
-  const winner = ranking[0];
-  const lowest = Math.min(...results.map((r) => r.sum));
-  return (
-    <div className="modal-backdrop">
-      <div className="modal summary">
-        <h2>{over ? (winner.id === HUMAN_ID ? '🏆 You win!' : `🏆 ${winner.name} wins!`) : `Round ${s.round} results`}</h2>
-        {s.pedro && (
-          <p className="muted">
-            {getPlayer(s, s.pedro.callerId)?.name} {s.pedro.auto ? 'ran out of cards' : 'called Pedro'}.
-          </p>
-        )}
-        <table>
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th>Cards</th>
-              <th>Round</th>
-              <th>Total</th>
-              {s.settings.limit && <th className="col-progress">Points</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r) => {
-              const p = getPlayer(s, r.playerId)!;
-              return (
-                <tr key={r.playerId} className={r.sum === lowest ? 'is-best' : ''}>
-                  <td>{p.name}</td>
-                  <td className="mini-cards">
-                    {r.cards.length
-                      ? r.cards.map((c) => (
-                          <span key={c.id} className={`mini ${c.suit === 'H' || c.suit === 'D' ? 'is-red' : ''}`}>
-                            {cardName(c)}
-                          </span>
-                        ))
-                      : '—'}
-                  </td>
-                  <td>
-                    {r.sum}
-                    {r.penalty ? <span className="penalty"> +{r.penalty}</span> : null}
-                  </td>
-                  <td>
-                    <b>{r.total}</b>
-                  </td>
-                  {s.settings.limit && <ProgressCell before={r.total - r.sum - r.penalty} after={r.total} limit={s.settings.limit} />}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div className="buttons">
-          {over ? (
-            <>
-              <button className="btn btn--primary" onClick={onRestart}>
-                {restartLabel}
-              </button>
-              <button className="btn" onClick={onExit}>
-                Menu
-              </button>
-            </>
-          ) : (
-            <button className="btn btn--primary" onClick={onNext}>
-              Next round
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProgressCell({ before, after, limit }: { before: number; after: number; limit: number }) {
-  const pct = (x: number) => `${Math.min(100, Math.max(0, (x / limit) * 100))}%`;
-  const lost = after >= limit;
-  const danger = !lost && after >= limit * 0.7;
-  return (
-    <td className="col-progress">
-      <div className={`progress ${lost ? 'is-lost' : danger ? 'is-danger' : ''}`}>
-        <div className="progress-before" style={{ width: pct(Math.min(before, after)) }} />
-        <div
-          className="progress-add"
-          style={{ left: pct(Math.min(before, after)), width: pct(Math.max(0, after - Math.max(0, Math.min(before, after)))) }}
-        />
-      </div>
-      <span className="progress-text">
-        {after} / {limit} pts
-      </span>
-    </td>
   );
 }

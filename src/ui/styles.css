@@ -1355,3 +1355,564 @@ body {
     min-width: 70px;
   }
 }
+
+/* ───────────── sound / animation toggles ───────────── */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.toggle.is-off {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.toggle.is-off .toggle-label {
+  text-decoration: line-through;
+}
+@media (max-width: 760px) {
+  .toggle-label {
+    display: none;
+  }
+  .toggle {
+    padding: 4px 8px;
+  }
+}
+
+/* Animations off: everything snaps into place. */
+.no-anim *,
+.no-anim *::before,
+.no-anim *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* ───────────── instructions: big, beside your cards ───────────── */
+.seat-body > .actionbar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-content: center;
+  text-align: center;
+}
+.actionbar .hint {
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+.actionbar.is-urgent {
+  background: rgba(244, 196, 48, 0.12);
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+.actionbar.is-urgent .hint {
+  font-weight: 600;
+}
+@media (min-width: 901px) {
+  .seat--me {
+    width: min(1100px, 100%);
+  }
+  .seat-body {
+    align-items: center;
+  }
+  .seat-body > .hand,
+  .seat-body > .held {
+    grid-row: 1;
+  }
+  /* Left of your hand, where there's room. */
+  .seat-body > .actionbar {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+    width: min(340px, 100%);
+    margin-top: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 2px solid rgba(255, 255, 255, 0.12);
+  }
+  .seat-body > .actionbar.is-urgent {
+    background: rgba(244, 196, 48, 0.12);
+    border-color: var(--accent);
+    box-shadow: 0 0 24px rgba(244, 196, 48, 0.25);
+  }
+  .seat-body > .actionbar .hint {
+    flex: 0 0 auto;
+    font-size: clamp(1.1rem, 1.35vw, 1.4rem);
+  }
+  .seat-body > .actionbar:has(.hint:empty) {
+    visibility: hidden;
+  }
+}
+
+/* ───────────── PEDRO! announcement ───────────── */
+.pedro-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(13, 43, 77, 0.85) 0%, rgba(0, 0, 0, 0.35) 75%);
+  animation: pedro-fade 2.8s ease-out forwards;
+}
+.pedro-splash-title {
+  font-size: clamp(72px, 16vw, 200px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #74acdf;
+  -webkit-text-stroke: 4px #fff;
+  paint-order: stroke fill;
+  text-shadow: 0 0 40px rgba(116, 172, 223, 0.9), 0 10px 30px rgba(0, 0, 0, 0.6);
+  animation: pedro-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.pedro-splash-sub {
+  font-size: clamp(18px, 3vw, 32px);
+  font-weight: 800;
+  color: #fff;
+  background: #0d2b4d;
+  padding: 6px 18px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pedro-pop 0.6s 0.15s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes pedro-pop {
+  from {
+    transform: scale(0.2) rotate(-8deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+@keyframes pedro-fade {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.no-anim .penalty-pop {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ───────────── end of round: the reveal ───────────── */
+.reveal-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: radial-gradient(ellipse at center, #1b5a42 0%, #0b2a1f 75%);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.reveal {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: max(16px, env(safe-area-inset-top)) clamp(12px, 3vw, 40px) 24px;
+  gap: clamp(10px, 2vh, 20px);
+}
+.reveal-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+}
+.reveal-head h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(1.4rem, 3.2vw, 2.4rem);
+}
+.reveal-caller {
+  grid-row: 2;
+  margin: 0;
+  color: #9fd0ff;
+  font-weight: 800;
+  font-size: clamp(1rem, 1.8vw, 1.3rem);
+}
+.reveal-skip {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+.reveal-rows {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(8px, 1.6vh, 16px);
+}
+.reveal-row {
+  --cw: clamp(46px, min(7vw, 11vh), 100px);
+  display: grid;
+  grid-template-columns: minmax(90px, 200px) 1fr auto;
+  align-items: center;
+  gap: 8px clamp(10px, 2vw, 28px);
+  padding: clamp(8px, 1.4vh, 14px) clamp(10px, 2vw, 22px);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 2px solid transparent;
+  transition: border-color 0.3s, background 0.3s, transform 0.3s;
+}
+.reveal-row.is-me .reveal-name {
+  color: var(--accent);
+}
+.reveal-row.is-winner {
+  border-color: var(--accent);
+  background: rgba(255, 204, 51, 0.12);
+  box-shadow: 0 0 30px rgba(255, 204, 51, 0.25);
+  transform: scale(1.02);
+}
+.reveal-name {
+  font-weight: 800;
+  font-size: clamp(1.05rem, 2vw, 1.6rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.reveal-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--cw) * 0.14);
+}
+.reveal-cards .card--face {
+  animation: reveal-flip 0.45s ease-out;
+}
+@keyframes reveal-flip {
+  from {
+    transform: perspective(600px) rotateY(90deg) scale(1.1);
+  }
+  to {
+    transform: perspective(600px) rotateY(0) scale(1);
+  }
+}
+.reveal-empty {
+  color: var(--good);
+  font-weight: 700;
+}
+.reveal-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 3ch;
+}
+.reveal-sum {
+  font-size: clamp(2rem, 5vw, 3.6rem);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  animation: pop 0.3s ease-out;
+}
+.reveal-row.is-winner .reveal-sum {
+  color: var(--accent);
+}
+.reveal-stamp {
+  font-weight: 900;
+  font-size: clamp(0.8rem, 1.4vw, 1.05rem);
+  padding: 3px 10px;
+  border-radius: 8px;
+  border: 3px solid currentColor;
+  transform: rotate(-6deg);
+  white-space: nowrap;
+  animation: stamp 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.reveal-stamp.is-bad {
+  color: var(--danger);
+}
+.reveal-stamp.is-good {
+  color: #9fd0ff;
+}
+@keyframes stamp {
+  from {
+    transform: rotate(-6deg) scale(2.4);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(-6deg) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Round winner / champion: full screen. */
+.reveal-splash {
+  all: unset;
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2vh, 18px);
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  background: radial-gradient(circle, rgba(13, 43, 77, 0.92) 0%, rgba(5, 20, 15, 0.96) 80%);
+  animation: fade-in 0.35s ease-out;
+  overflow: hidden;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.reveal-splash-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 800;
+  color: #9fd0ff;
+  font-size: clamp(0.9rem, 2.2vw, 1.4rem);
+}
+.reveal-splash-name {
+  font-size: clamp(3rem, 12vw, 9rem);
+  font-weight: 900;
+  line-height: 1.05;
+  color: var(--accent);
+  text-shadow: 0 0 40px rgba(255, 204, 51, 0.5), 0 10px 30px rgba(0, 0, 0, 0.6);
+  overflow-wrap: anywhere;
+  animation: pedro-pop 0.7s 0.1s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.reveal-splash-sub {
+  font-size: clamp(1rem, 2.6vw, 1.6rem);
+  font-weight: 700;
+  color: #fff;
+}
+.reveal-tap {
+  margin-top: 2vh;
+  font-size: 0.85rem;
+  color: var(--muted);
+  animation: tap-blink 2s ease-in-out infinite;
+}
+@keyframes tap-blink {
+  50% {
+    opacity: 0.4;
+  }
+}
+.reveal-splash--champion {
+  background: radial-gradient(circle, rgba(120, 90, 10, 0.9) 0%, rgba(30, 20, 0, 0.97) 75%);
+}
+.reveal-splash--champion .reveal-splash-kicker {
+  color: #ffe08a;
+  font-size: clamp(1.1rem, 3vw, 2rem);
+}
+.reveal-cup {
+  font-size: clamp(5rem, 22vw, 14rem);
+  line-height: 1;
+  filter: drop-shadow(0 0 40px rgba(255, 204, 51, 0.8));
+  animation: cup 1s cubic-bezier(0.2, 1.4, 0.4, 1) both, cup-float 3s 1s ease-in-out infinite;
+}
+@keyframes cup {
+  from {
+    transform: translateY(60px) scale(0.2) rotate(-20deg);
+    opacity: 0;
+  }
+}
+@keyframes cup-float {
+  50% {
+    transform: translateY(-10px) rotate(3deg);
+  }
+}
+.reveal-confetti i {
+  position: absolute;
+  top: -20px;
+  left: var(--x);
+  width: 10px;
+  height: 16px;
+  background: hsl(calc(var(--i) * 47), 85%, 60%);
+  border-radius: 2px;
+  animation: confetti var(--dur) var(--delay) linear infinite;
+}
+@keyframes confetti {
+  to {
+    transform: translateY(110vh) rotate(720deg);
+  }
+}
+
+/* Final scores of the round, big. */
+.standings {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  width: min(1000px, 100%);
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) clamp(12px, 3vw, 32px) max(24px, env(safe-area-inset-bottom));
+  animation: fade-in 0.3s ease-out;
+}
+.standings h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(1.5rem, 3.4vw, 2.6rem);
+  text-align: center;
+}
+.standings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.standings-row {
+  display: grid;
+  grid-template-columns: 2.2em minmax(80px, 1fr) 2fr auto auto minmax(110px, 1.2fr);
+  grid-template-areas: 'place name cards round total progress';
+  align-items: center;
+  gap: 6px 16px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: clamp(1rem, 1.7vw, 1.3rem);
+}
+.standings-row.is-me {
+  outline: 2px solid rgba(255, 204, 51, 0.5);
+}
+.standings-row.is-best .standings-name::after {
+  content: ' 👑';
+}
+.standings-place {
+  grid-area: place;
+  font-weight: 900;
+  color: var(--muted);
+  font-size: 1.3em;
+}
+.standings-name {
+  grid-area: name;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.standings-cards {
+  grid-area: cards;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.standings-cards .mini {
+  font-size: 0.85em;
+}
+.standings-round {
+  grid-area: round;
+  color: var(--muted);
+}
+.standings-total {
+  grid-area: total;
+  font-weight: 900;
+  font-size: 1.5em;
+}
+.standings-progress {
+  grid-area: progress;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.standings-progress .progress {
+  display: block;
+}
+.standings-progress .progress-text {
+  font-size: 0.75em;
+}
+.standings-buttons {
+  justify-content: center;
+}
+.standings-buttons .btn {
+  font-size: 1.15rem;
+  padding: 12px 28px;
+}
+
+@media (max-width: 640px) {
+  .reveal-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'name score' 'cards score';
+    --cw: clamp(38px, 13vw, 64px);
+  }
+  .reveal-name {
+    grid-area: name;
+  }
+  .reveal-cards {
+    grid-area: cards;
+  }
+  .reveal-score {
+    grid-area: score;
+  }
+  .standings-row {
+    grid-template-columns: 2em 1fr auto auto;
+    grid-template-areas: 'place name round total' 'place cards cards cards' 'place progress progress progress';
+    padding: 12px;
+  }
+}
+
+/* ───────────── a card gets burned ───────────── */
+.burn-fx {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 8;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 140, 0, 0.55) 0%, rgba(255, 60, 0, 0.25) 45%, transparent 70%);
+  animation: burn-glow 1.4s ease-out forwards;
+}
+.burn-fx span {
+  position: absolute;
+  left: 50%;
+  bottom: 30%;
+  font-size: calc(var(--cw, 80px) * 0.7);
+  transform-origin: 50% 100%;
+  animation: burn-flame 1.2s ease-out forwards;
+}
+.burn-fx span:nth-child(2) {
+  left: 22%;
+  animation-delay: 0.08s;
+  font-size: calc(var(--cw, 80px) * 0.5);
+}
+.burn-fx span:nth-child(3) {
+  left: 70%;
+  animation-delay: 0.15s;
+  font-size: calc(var(--cw, 80px) * 0.5);
+}
+@keyframes burn-flame {
+  0% {
+    transform: translate(-50%, 20%) scale(0.2);
+    opacity: 0;
+  }
+  25% {
+    transform: translate(-50%, 0) scale(1.25);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -60%) scale(0.8);
+    opacity: 0;
+  }
+}
+@keyframes burn-glow {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}

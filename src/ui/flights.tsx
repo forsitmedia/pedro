@@ -98,6 +98,7 @@ export function flightsFor(
     case 'snapSlow':
       // The card goes towards the pile, gets rejected, and comes back face-up.
       if (ref) add(e.card ?? null, true, slotKey(ref.playerId, ref.slot), 'discard', 0, 1500, true);
+      // (No slot: the card was already thrown by someone faster — only the penalty is shown.)
       break;
     case 'penalty':
       (e.slots ?? []).forEach((r, i) => add(null, false, 'deck', slotKey(r.playerId, r.slot), 1500 + i * 500, 750));

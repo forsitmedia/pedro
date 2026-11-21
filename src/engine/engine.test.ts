@@ -121,6 +121,25 @@ describe('throwing matching cards', () => {
     expect(handCount(s.players[1])).toBe(5);
   });
 
+  it('throwing a card someone already threw counts as too slow (+1), not as nothing', () => {
+    let s = withTop(5);
+    s.players[0].hand[0] = card(5, 'S', 'five');
+    // a throws their own 5 first; b was dragging the same card and lands a moment later.
+    s = act(s, { type: 'SNAP', playerId: 'a', target: { playerId: 'a', slot: 0 } });
+    const bBefore = handCount(s.players[1]);
+    s = act(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'a', slot: 0 }, cardId: 'five' });
+    expect(handCount(s.players[1])).toBe(bBefore + 1);
+    expect(handCount(s.players[0])).toBe(3);
+    expect(s.events.at(-2)?.kind).toBe('snapSlow');
+  });
+
+  it('a throw whose card moved elsewhere is cancelled without penalty', () => {
+    const s = withTop(5);
+    s.players[0].hand[0] = card(5, 'S', 'five');
+    const r = apply(s, { type: 'SNAP', playerId: 'b', target: { playerId: 'a', slot: 0 }, cardId: 'other' }, ctx());
+    expect(r.ok).toBe(false);
+  });
+
   it('emptying your hand triggers an automatic Pedro without penalty', () => {
     let s = withTop(5);
     s.players[1].hand = [card(5, 'C'), null, null, null];
