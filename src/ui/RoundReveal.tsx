@@ -5,6 +5,7 @@ import type { GameState, RoundResult } from '../engine/types';
 import { CardView } from './CardView';
 import { usePrefs } from './prefs';
 import { play } from './sound';
+import { gridPos } from './layout';
 
 /**
  * End of a round, like at a real table: everyone turns their cards over one by one
@@ -92,6 +93,54 @@ export function RoundReveal({
   // Skip the suspense: straight to the cup (game over) or to the scores.
   const toTable = () => setDone(steps.length);
 
+  /** A player's hand exactly as it lay on the table (same spots, gaps included), flipped one card at a time. */
+  const seat = (playerId: string) => {
+    const i = order.findIndex((r) => r.playerId === playerId);
+    const r = order[i];
+    const p = getPlayer(s, playerId);
+    if (!r || !p) return null;
+    const shownCards = r.cards.filter((_, j) => flipped(i, j));
+    const running = shownCards.reduce((n, c) => n + cardValue(c), 0);
+    const started = r.cards.length === 0 ? flipped(i, -1) : flipped(i, 0);
+    const verdict = reached('verdict');
+    const isCaller = caller?.playerId === playerId;
+    const isWinner = verdict && roundScore(r) === bestRound;
+    const cols = 2 + Math.max(0, Math.ceil((p.hand.length - 4) / 2));
+    let j = -1;
+    return (
+      <div
+        key={playerId}
+        className={`reveal-seat ${isWinner ? 'is-winner' : ''} ${playerId === meId ? 'is-me' : ''} ${started ? 'is-started' : ''}`}
+        style={{ '--cols': cols, ...(cols > 3 ? { '--cw': `calc(var(--base-cw) * ${3 / cols})` } : {}) } as CSSProperties}
+      >
+        <div className="reveal-name">
+          {isWinner && <span aria-hidden>👑</span>}
+          {nameOf(playerId)}
+          {isCaller && <span className="badge badge--pedro">called Pedro</span>}
+        </div>
+        <div className="reveal-body">
+          <div className="hand">
+            {p.hand.map((c, slot) => {
+              if (!c) return <CardView key={`e${slot}`} card={null} faceUp={false} empty style={gridPos(slot)} />;
+              j++;
+              const card = r.cards[j] ?? c;
+              return <CardView key={card.id} card={card} faceUp={flipped(i, j)} title={cardName(card)} style={gridPos(slot)} />;
+            })}
+          </div>
+          <div className="reveal-score">
+            <span key={running} className="reveal-sum">
+              {started ? running : '?'}
+            </span>
+            {r.cards.length === 0 && <span className="reveal-empty">no cards!</span>}
+            {verdict && isCaller && (
+              <span className={`reveal-stamp ${pedroFailed ? 'is-bad' : 'is-good'}`}>{pedroFailed ? `+${r.penalty} PEDRO FAILED` : '✓ PEDRO!'}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="reveal-screen" role="dialog" aria-label={`Round ${s.round} results`}>
       {(stage === 'reveal' || stage === 'winner') && (
@@ -100,48 +149,16 @@ export function RoundReveal({
             <h2>Round {s.round} — show your cards!</h2>
             {s.pedro && (
               <p className="reveal-caller">
-                {s.pedro.auto ? `${nameOf(s.pedro.callerId)} ran out of cards` : `${nameOf(s.pedro.callerId)} called PEDRO!`}
+                {s.pedro.auto ? `${nameOf(s.pedro.callerId)} ran out of cards` : `${nameOf(s.pedro.callerId)} called Pedro`}
               </p>
             )}
             <button className="btn reveal-skip" onClick={() => setDone(over ? steps.findIndex((x) => x.kind === 'champion') + 1 : steps.length)}>
               Skip ▸
             </button>
           </header>
-          <div className="reveal-rows">
-            {order.map((r, i) => {
-              const shownCards = r.cards.filter((_, j) => flipped(i, j));
-              const running = shownCards.reduce((n, c) => n + cardValue(c), 0);
-              const complete = r.cards.length === 0 ? flipped(i, -1) : shownCards.length === r.cards.length;
-              const verdict = reached('verdict');
-              const isCaller = caller?.playerId === r.playerId;
-              const isWinner = verdict && roundScore(r) === bestRound;
-              return (
-                <div
-                  key={r.playerId}
-                  className={`reveal-row ${complete ? 'is-done' : ''} ${isWinner ? 'is-winner' : ''} ${r.playerId === meId ? 'is-me' : ''}`}
-                >
-                  <div className="reveal-name">
-                    {isWinner && <span aria-hidden>👑 </span>}
-                    {nameOf(r.playerId)}
-                    {isCaller && <span className="badge badge--pedro">PEDRO</span>}
-                  </div>
-                  <div className="reveal-cards">
-                    {r.cards.length === 0 && <span className="reveal-empty">no cards left!</span>}
-                    {r.cards.map((c, j) => (
-                      <CardView key={c.id} card={c} faceUp={flipped(i, j)} title={cardName(c)} />
-                    ))}
-                  </div>
-                  <div className="reveal-score">
-                    <span key={running} className="reveal-sum">
-                      {flipped(i, 0) || r.cards.length === 0 ? running : '?'}
-                    </span>
-                    {verdict && isCaller && (
-                      <span className={`reveal-stamp ${pedroFailed ? 'is-bad' : 'is-good'}`}>{pedroFailed ? `+${r.penalty} PEDRO FAILED` : '✓ PEDRO!'}</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="reveal-table">
+            <div className="reveal-opps">{s.players.filter((p) => p.id !== meId).map((p) => seat(p.id))}</div>
+            <div className="reveal-mine">{seat(meId)}</div>
           </div>
         </div>
       )}

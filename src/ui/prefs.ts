@@ -1,19 +1,32 @@
 import { useSyncExternalStore } from 'react';
 
-/** Player preferences kept in this browser: sound effects and animations on/off. */
+export type MusicStyle = 'off' | 'chill' | 'lounge' | 'upbeat';
+
+export const MUSIC_STYLES: { id: MusicStyle; label: string }[] = [
+  { id: 'chill', label: 'Relaxing' },
+  { id: 'lounge', label: 'Lounge' },
+  { id: 'upbeat', label: 'Upbeat' },
+  { id: 'off', label: 'Off' },
+];
+
+/** Player preferences kept in this browser. */
 export interface Prefs {
   sound: boolean;
   animations: boolean;
-  music: boolean;
+  musicStyle: MusicStyle;
 }
 
 const KEY = 'pedro.prefs';
 const listeners = new Set<() => void>();
 
 function load(): Prefs {
-  const def: Prefs = { sound: true, animations: true, music: true };
+  const def: Prefs = { sound: true, animations: true, musicStyle: 'lounge' };
   try {
-    return { ...def, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    // Older versions stored music as on/off.
+    if (saved.music === false && !saved.musicStyle) saved.musicStyle = 'off';
+    delete saved.music;
+    return { ...def, ...saved };
   } catch {
     return def;
   }

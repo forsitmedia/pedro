@@ -16,7 +16,8 @@ import { CardView } from './CardView';
 import { flightsFor, FlightView, heldKey, measure, slotKey, type Flight, type Rect } from './flights';
 import { Rules } from './Rules';
 import { RoundReveal } from './RoundReveal';
-import { setPrefs, usePrefs } from './prefs';
+import { gridPos } from './layout';
+import { MUSIC_STYLES, setPrefs, usePrefs, type MusicStyle } from './prefs';
 import { play } from './sound';
 
 type Tone = 'info' | 'good' | 'bad' | 'big' | 'error';
@@ -77,12 +78,6 @@ function youify(text: string, myName: string): string {
   return t;
 }
 
-/** 2×2 square: slots 0-1 on top, 2-3 below; extra (penalty) cards grow sideways. */
-function gridPos(i: number): CSSProperties {
-  if (i < 4) return { gridRow: i < 2 ? 1 : 2, gridColumn: (i % 2) + 1 };
-  const j = i - 4;
-  return { gridRow: (j % 2) + 1, gridColumn: 3 + Math.floor(j / 2) };
-}
 
 const systemReducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -374,7 +369,6 @@ export function GameTable({
 
   const isFaceUp = (c: Card | null) => {
     if (!c) return false;
-    if (s.phase === 'roundEnd' || s.phase === 'gameOver') return true;
     return (reveals[c.id] ?? 0) > now;
   };
 
@@ -573,7 +567,7 @@ export function GameTable({
 
   const badges = (p: Player) => (
     <>
-      {s.pedro?.callerId === p.id && <span className="badge badge--pedro">PEDRO!</span>}
+      {s.pedro?.callerId === p.id && <span className="badge badge--pedro">called Pedro</span>}
       {isPlayPhase(s) && shownCurId === p.id && <span className="badge badge--turn">playing</span>}
       {s.phase === 'peek' && s.ready[p.id] && <span className="badge">ready</span>}
       {game.isAway?.(p.id) && <span className="badge badge--away">📵 away</span>}
@@ -631,14 +625,16 @@ export function GameTable({
           >
             {prefs.sound ? '🔊' : '🔇'} <span className="toggle-label">Sound</span>
           </button>
-          <button
-            className={`toggle ${prefs.music ? '' : 'is-off'}`}
-            onClick={() => setPrefs({ music: !prefs.music })}
-            title={prefs.music ? 'Music on — tap to turn off' : 'Music off — tap to turn on'}
-            aria-pressed={prefs.music}
-          >
-            🎵 <span className="toggle-label">Music</span>
-          </button>
+          <label className={`toggle toggle--select ${prefs.musicStyle === 'off' ? 'is-off' : ''}`} title="Background music">
+            🎵
+            <select value={prefs.musicStyle} onChange={(e) => setPrefs({ musicStyle: e.target.value as MusicStyle })} aria-label="Background music">
+              {MUSIC_STYLES.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id === 'off' ? 'Music off' : m.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             className={`toggle ${prefs.animations ? '' : 'is-off'}`}
             onClick={() => setPrefs({ animations: !prefs.animations })}
