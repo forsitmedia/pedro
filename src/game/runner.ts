@@ -18,6 +18,15 @@ export interface RunnerOptions {
   peekSeconds?: number | null;
   /** Is this human currently disconnected? Their turn is then played automatically after a short wait. */
   isAway?: (playerId: string) => boolean;
+  /** Pick up a saved game (after the server restarted) instead of dealing a new one. */
+  resume?: RunnerSnapshot;
+}
+
+/** Everything needed to continue a game later. */
+export interface RunnerSnapshot {
+  state: GameState;
+  /** Cards each computer player has forgotten. */
+  forgotten: Record<string, string[]>;
 }
 
 /** How long we wait for a disconnected player before playing their turn for them. */
@@ -56,14 +65,19 @@ export class GameRunner {
     private opts: RunnerOptions,
   ) {
     this.profile = PROFILES[opts.difficulty];
-    for (const p of players) if (p.isBot) this.forgotten[p.id] = new Set();
-    this.state = createGame(players, settings, { rng: this.rng, now: Date.now() });
+    for (const p of players) if (p.isBot) this.forgotten[p.id] = new Set(opts.resume?.forgotten[p.id] ?? []);
+    this.state = opts.resume ? opts.resume.state : createGame(players, settings, { rng: this.rng, now: Date.now() });
     this.later(() => this.afterChange(), 0);
     // Safety net: if someone should be playing but nothing is scheduled, nudge it.
     this.watchdog = setInterval(() => this.afterChange(), 1500);
   }
 
   getState = () => this.state;
+
+  /** The game as it is now, to save it. */
+  snapshot(): RunnerSnapshot {
+    return { state: this.state, forgotten: Object.fromEntries(Object.entries(this.forgotten).map(([id, set]) => [id, [...set]])) };
+  }
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);

@@ -146,7 +146,9 @@ export function App() {
           </h1>
           <div className="topbar-right">
             <IconButton icon="gear" label="Settings: table, deck, sound" onClick={() => setShowSettings(true)} />
-            <IconButton icon="help" label="How to play" onClick={() => setShowRules(true)} />
+            <button className="howto-btn" onClick={() => setShowRules(true)}>
+              <Icon name="help" size={20} /> How to play
+            </button>
           </div>
         </header>
 

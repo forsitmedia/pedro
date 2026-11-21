@@ -6,7 +6,7 @@ import { getPrefs, subscribe, type MusicStyle } from './prefs';
  * Browsers only allow sound after the first tap/click, so the audio context is unlocked then.
  */
 
-export type Sfx = 'burn' | 'draw' | 'place' | 'flip' | 'snap' | 'wrong' | 'penalty' | 'peek' | 'shuffle' | 'swap' | 'pedro' | 'turn';
+export type Sfx = 'burn' | 'draw' | 'place' | 'flip' | 'snap' | 'wrong' | 'penalty' | 'peek' | 'shuffle' | 'swap' | 'pedro' | 'turn' | 'champion';
 
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
@@ -167,7 +167,86 @@ export function play(name: Sfx, delayMs = 0) {
       tone(a, out, t, 660, 0.3, 0.05);
       tone(a, out, t + 0.14, 880, 0.4, 0.04);
       break;
+    case 'champion':
+      fanfare(a, out, t);
+      break;
   }
+}
+
+/** A brass note: two detuned saws through a filter that opens up (the "blare"), with vibrato on long notes. */
+function brass(a: AudioContext, out: AudioNode, at: number, freq: number, dur: number, gain: number) {
+  const f = a.createBiquadFilter();
+  f.type = 'lowpass';
+  f.Q.value = 1.2;
+  f.frequency.setValueAtTime(600, at);
+  f.frequency.exponentialRampToValueAtTime(3200, at + 0.06);
+  f.frequency.exponentialRampToValueAtTime(1800, at + Math.max(0.1, dur));
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(gain, at + 0.03);
+  g.gain.setValueAtTime(gain * 0.85, at + Math.max(0.04, dur - 0.08));
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur + 0.12);
+  f.connect(g).connect(out);
+  for (const detune of [-7, 7]) {
+    const o = a.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(freq, at);
+    o.detune.value = detune;
+    if (dur > 0.5) {
+      // vibrato that grows on the held note
+      const lfo = a.createOscillator();
+      const depth = a.createGain();
+      lfo.frequency.value = 5.5;
+      depth.gain.setValueAtTime(0, at);
+      depth.gain.linearRampToValueAtTime(freq * 0.012, at + dur * 0.6);
+      lfo.connect(depth).connect(o.frequency);
+      lfo.start(at);
+      lfo.stop(at + dur + 0.2);
+    }
+    o.connect(f);
+    o.start(at);
+    o.stop(at + dur + 0.2);
+  }
+}
+
+/** "Tu-tu-ru-tu-tu-tut… TUUUU!" — a short, original championship fanfare (~3.5 s). */
+function fanfare(a: AudioContext, out: AudioNode, t: number) {
+  const bus = a.createGain();
+  bus.gain.value = 0.55;
+  bus.connect(out);
+  const n = (m: number) => 440 * 2 ** ((m - 69) / 12);
+  // The pickup: quick, punchy, climbing.
+  const lead: [number, number, number][] = [
+    [0.0, 67, 0.11], // tu
+    [0.14, 67, 0.11], // tu
+    [0.28, 72, 0.16], // ru
+    [0.5, 71, 0.11], // tu
+    [0.64, 72, 0.11], // tu
+    [0.78, 74, 0.2], // tut
+  ];
+  for (const [d, m, len] of lead) {
+    brass(a, bus, t + d, n(m), len, 0.16);
+    brass(a, bus, t + d, n(m - 12), len, 0.07); // octave below for body
+  }
+  // The big held chord: C major, with the top note on C6 — "tuuuuuu".
+  const hold = t + 1.08;
+  const holdLen = 1.9;
+  brass(a, bus, hold, n(84), holdLen, 0.15);
+  for (const m of [72, 76, 79]) brass(a, bus, hold, n(m), holdLen, 0.09);
+  brass(a, bus, hold, n(48), holdLen, 0.12);
+  // Timpani roll building into the chord, then a big hit.
+  for (let i = 0; i < 14; i++) {
+    const at = t + 0.5 + i * 0.04;
+    tone(a, out, at, 98, 0.12, 0.05 + i * 0.012, 'sine', 80);
+  }
+  tone(a, out, hold, 98, 0.9, 0.45, 'sine', 70);
+  // Cymbal crash on the chord, ringing out.
+  burst(a, out, hold, { type: 'highpass', freq: 5000, attack: 0.005, decay: 1.8, gain: 0.18 });
+  burst(a, out, hold, { type: 'bandpass', freq: 9000, q: 0.5, attack: 0.005, decay: 1.2, gain: 0.08 });
+  // Final stab to close it off.
+  const end = hold + holdLen + 0.05;
+  for (const m of [60, 72, 76, 79, 84]) brass(a, bus, end, n(m), 0.22, 0.1);
+  tone(a, out, end, 98, 0.4, 0.35, 'sine', 70);
 }
 
 // ───────────── background music ─────────────

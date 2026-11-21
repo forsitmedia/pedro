@@ -17,7 +17,7 @@ import { flightsFor, FlightView, heldKey, measure, slotKey, type Flight, type Re
 import { Rules } from './Rules';
 import { RoundReveal } from './RoundReveal';
 import { gridPos } from './layout';
-import { MUSIC_STYLES, setPrefs, usePrefs } from './prefs';
+import { getPrefs, setPrefs, usePrefs } from './prefs';
 import { Icon, IconButton } from './art/Icon';
 import { Avatar, avatarFor } from './art/Avatar';
 import { SettingsPanel } from './Personalize';
@@ -669,13 +669,12 @@ export function GameTable({
           />
           <IconButton
             icon="music"
-            label={`Music: ${MUSIC_STYLES.find((m) => m.id === prefs.musicStyle)?.label} — tap to change`}
+            label={prefs.musicStyle === 'off' ? 'Music off — tap to turn on (change the style in Settings)' : 'Music on — tap to turn off'}
             off={prefs.musicStyle === 'off'}
+            pressed={prefs.musicStyle !== 'off'}
             onClick={() => {
-              const i = MUSIC_STYLES.findIndex((m) => m.id === prefs.musicStyle);
-              const next = MUSIC_STYLES[(i + 1) % MUSIC_STYLES.length];
-              setPrefs({ musicStyle: next.id });
-              toast(next.id === 'off' ? 'Music off' : `Music: ${next.label}`, 'info');
+              const now = getPrefs();
+              setPrefs({ musicStyle: now.musicStyle === 'off' ? now.musicPick : 'off' });
             }}
           />
           <IconButton icon="gear" label="Settings: table, deck, sound" onClick={() => setShowSettings(true)} />
@@ -912,6 +911,13 @@ export function GameTable({
   );
 }
 
+const POWER_SHORT: Record<PowerRank, string> = {
+  7: 'peek yours',
+  8: 'peek a rival',
+  9: 'blind swap',
+  10: 'shuffle a hand',
+};
+
 const POWER_LABEL: Record<PowerRank, string> = {
   7: 'peek at one of your cards',
   8: "peek at an opponent's card",
@@ -935,6 +941,7 @@ function Hint(props: {
   onReady: () => void;
 }) {
   const { s, myTurn, takeMode, nineFirst, activePower, onReady, choosing, heldMode, onHeldMode } = props;
+  const prefs = usePrefs();
   const HUMAN_ID = props.meId;
   const top = topDiscard(s);
   let text = '';
@@ -965,16 +972,48 @@ function Hint(props: {
       : `Your turn — tap the deck to draw${top && !s.topBurned ? `, or drag the ${cardName(top)} onto one of your cards` : ''}.`;
   } else if (choosing && s.drawn) {
     const r = s.drawn.rank as PowerRank;
-    text = `You drew a ${r} — a power card! What do you want to do?`;
+    const detail = prefs.hintDetail;
+    const pick = (m: 'power' | 'swap') => {
+      // After a few choices you know the drill: switch to the short version (the ? brings the long one back).
+      const n = prefs.powerChoices + 1;
+      setPrefs({ powerChoices: n, ...(n === 3 ? { hintDetail: false } : {}) });
+      onHeldMode(m);
+    };
+    text = detail ? `You drew ${r === 8 ? 'an' : 'a'} ${r} — a power card! What do you want to do?` : `Power card ${r}`;
     button = (
-      <div className="choice">
-        <button className="btn btn--primary" onClick={() => onHeldMode('power')}>
-          Use the power: {POWER_LABEL[r]}
+      <div className={`choice ${detail ? '' : 'choice--compact'}`}>
+        <button
+          className="hint-toggle"
+          onClick={() => setPrefs({ hintDetail: !detail })}
+          aria-label={detail ? 'Shorter' : 'Explain'}
+          title={detail ? 'Show the short version' : 'Explain the choices'}
+        >
+          {detail ? '−' : '?'}
         </button>
-        <button className="btn" onClick={() => onHeldMode('swap')}>
-          Keep the {r} (swap it with one of my cards)
-        </button>
-        <span className="muted small">…or tap the pile to throw it away.</span>
+        {detail ? (
+          <>
+            <button className="btn btn--primary" onClick={() => pick('power')}>
+              Use the power: {POWER_LABEL[r]}
+            </button>
+            <button className="btn" onClick={() => pick('swap')}>
+              Keep the {r} (swap it with one of my cards)
+            </button>
+            <span className="muted small">…or tap the pile to throw it away.</span>
+          </>
+        ) : (
+          <div className="choice-row">
+            <button className="btn btn--primary" onClick={() => pick('power')}>
+              <span className="choice-power">
+                <Icon name="sparkle" size={16} /> Power
+              </span>
+              <small>{POWER_SHORT[r]}</small>
+            </button>
+            <button className="btn" onClick={() => pick('swap')}>
+              Keep
+              <small>swap into hand</small>
+            </button>
+          </div>
+        )}
       </div>
     );
   } else {

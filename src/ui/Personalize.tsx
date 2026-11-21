@@ -89,7 +89,7 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   );
 }
 
-/** Sound, music, animations, table and deck. */
+/** Sound, music, table and deck. */
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const prefs = usePrefs();
   return (
@@ -104,9 +104,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <Row icon={prefs.sound ? 'sound' : 'mute'} label="Sound effects">
           <Switch on={prefs.sound} onChange={(sound) => setPrefs({ sound })} label="Sound effects" />
-        </Row>
-        <Row icon="sparkle" label="Animations">
-          <Switch on={prefs.animations} onChange={(animations) => setPrefs({ animations })} label="Animations" />
         </Row>
         <Row icon="music" label="Music">
           <div className="pills">

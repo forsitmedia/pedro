@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { viewFor } from '../src/engine/view';
 import type { Action } from '../src/engine/types';
-import { BOT_NAMES, GameRunner } from '../src/game/runner';
+import { BOT_NAMES, GameRunner, type RunnerSnapshot } from '../src/game/runner';
 import type { PedroLobby } from './lobby';
 import { cleanName } from '../src/online/names';
 import {
@@ -43,6 +43,24 @@ interface Seat {
   /** Player id + secret, for friends and the ranking (never sent to other players). */
   pid?: string;
   psecret?: string;
+}
+
+/** What a room saves, so a game survives the server restarting (an update, a crash…). */
+interface SavedRoom {
+  code: string;
+  seats: Seat[];
+  hostId: string;
+  settings: RoomSettings;
+  botSeats: { id: string; name: string }[];
+  seq: number;
+  visibility: Visibility;
+  opened: boolean;
+  key: string;
+  reported: boolean;
+  gameKey: string;
+  lastRound: number;
+  game: RunnerSnapshot | null;
+  savedAt: number;
 }
 
 interface Conn {
@@ -89,11 +107,88 @@ export class PedroRoom extends DurableObject<Env> {
   private quickTimer: ReturnType<typeof setTimeout> | null = null;
   private reportTimer: ReturnType<typeof setTimeout> | null = null;
   private listed = false;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // Back after a restart: pick up the table (and the game) where it was.
+    ctx.blockConcurrencyWhile(() => this.restore());
+  }
+
+  /* ───────────── saving and resuming ───────────── */
+
+  private async restore() {
+    const saved = await this.ctx.storage.get<SavedRoom>('room');
+    if (!saved) return;
+    if (Date.now() - saved.savedAt > IDLE_MS) {
+      await this.ctx.storage.delete('room');
+      return;
+    }
+    this.code = saved.code;
+    // Everyone reconnects on their own in a moment (same token → same seat).
+    this.seats = saved.seats.map((s) => ({ ...s, connected: false }));
+    this.hostId = saved.hostId;
+    this.settings = saved.settings;
+    this.botSeats = saved.botSeats;
+    this.seq = saved.seq;
+    this.visibility = saved.visibility;
+    this.opened = saved.opened;
+    this.key = saved.key;
+    this.reported = saved.reported;
+    this.gameKey = saved.gameKey;
+    this.lastRound = saved.lastRound;
+    if (saved.game) this.makeRunner(saved.game);
+    if (!this.idleTimer) this.idleTimer = setInterval(() => this.checkIdle(), 60_000);
+    // Still in the waiting room: people who don't come back are taken off the list.
+    if (!this.runner) {
+      setTimeout(() => {
+        if (this.runner) return;
+        for (const seat of [...this.seats]) if (!seat.connected) this.leave(seat);
+      }, LOBBY_GRACE_MS * 2);
+    }
+  }
+
+  /** Save a moment after things change (many quick moves → one write). */
+  private scheduleSave() {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      void this.save();
+    }, 400);
+  }
+
+  private async save() {
+    if (!this.seats.length && !this.runner) {
+      await this.ctx.storage.delete('room');
+      return;
+    }
+    const saved: SavedRoom = {
+      code: this.code,
+      seats: this.seats,
+      hostId: this.hostId,
+      settings: this.settings,
+      botSeats: this.botSeats,
+      seq: this.seq,
+      visibility: this.visibility,
+      opened: this.opened,
+      key: this.key,
+      reported: this.reported,
+      gameKey: this.gameKey,
+      lastRound: this.lastRound,
+      game: this.runner?.snapshot() ?? null,
+      savedAt: Date.now(),
+    };
+    try {
+      await this.ctx.storage.put('room', saved);
+    } catch {
+      /* too big or storage hiccup: the game goes on, it just can't be resumed */
+    }
+  }
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
     if (this.conns.size >= MAX_CONNECTIONS) return new Response('Room is busy', { status: 503 });
-    this.code = new URL(request.url).pathname.split('/')[3] ?? '';
+    this.code = (new URL(request.url).pathname.split('/')[3] ?? '').toUpperCase() || this.code;
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -294,6 +389,21 @@ export class PedroRoom extends DurableObject<Env> {
     const taken = new Set(this.seats.map((s) => s.name));
     const names = BOT_NAMES.filter((n) => !taken.has(n)).sort(() => Math.random() - 0.5);
     this.botSeats = Array.from({ length: settings.bots }, (_, i) => ({ id: `bot${i + 1}`, name: names[i] ?? `Bot ${i + 1}` }));
+    this.settings = settings;
+    this.reported = false;
+    this.gameKey = `${this.code}:${Date.now()}`;
+    this.lastRound = 0;
+    this.makeRunner();
+    // Remember who sat together ("played with recently", to add them as friends).
+    const pids = this.seats.map((s) => s.pid).filter((p): p is string => !!p);
+    if (pids.length >= 2) void this.lobby().playedTogether(pids).catch(() => {});
+    this.broadcastRoom();
+    this.broadcastState();
+  }
+
+  /** A new game, or (with `resume`) the saved one. */
+  private makeRunner(resume?: RunnerSnapshot) {
+    const settings = this.settings;
     this.runner = new GameRunner(
       [
         ...this.seats.map((s) => ({ id: s.id, name: s.name, isBot: false, avatar: s.avatar })),
@@ -305,20 +415,15 @@ export class PedroRoom extends DurableObject<Env> {
         turnSeconds: settings.turnSeconds,
         peekSeconds: settings.turnSeconds ? 60 : null,
         isAway: (id) => !this.seats.find((s) => s.id === id)?.connected,
+        resume,
       },
     );
-    this.reported = false;
-    this.gameKey = `${this.code}:${Date.now()}`;
-    this.lastRound = 0;
     this.runner.subscribe(() => {
       this.broadcastState();
       this.afterGameChange();
+      this.scheduleSave();
     });
-    // Remember who sat together ("played with recently", to add them as friends).
-    const pids = this.seats.map((s) => s.pid).filter((p): p is string => !!p);
-    if (pids.length >= 2) void this.lobby().playedTogether(pids).catch(() => {});
-    this.broadcastRoom();
-    this.broadcastState();
+    this.scheduleSave();
   }
 
   private act(ws: WebSocket, seat: Seat, action: Action) {
@@ -403,6 +508,7 @@ export class PedroRoom extends DurableObject<Env> {
   private broadcastRoom() {
     for (const [ws, c] of this.conns) if (c.seatId) this.send(ws, { t: 'room', room: this.roomInfo(c.seatId), you: c.seatId });
     this.scheduleReport();
+    this.scheduleSave();
   }
 
   /** Link the seat to the player's online profile (created now if they came straight from a link). */
@@ -532,6 +638,7 @@ export class PedroRoom extends DurableObject<Env> {
     this.hostId = '';
     this.opened = false;
     this.knocks.clear();
+    void this.ctx.storage.delete('room');
     if (this.quickTimer) clearTimeout(this.quickTimer);
     this.quickTimer = null;
     this.quickAt = null;

@@ -83,7 +83,8 @@ export function RoundReveal({
     const t = setTimeout(() => {
       if (st.kind === 'flip') play('flip');
       if (st.kind === 'verdict' && s.pedro && !s.pedro.auto) play(pedroFailed ? 'wrong' : 'snap');
-      if (st.kind === 'winner' || st.kind === 'champion') play('pedro');
+      if (st.kind === 'winner') play('pedro');
+      if (st.kind === 'champion') play('champion');
       setDone((d) => d + 1);
     }, st.wait);
     return () => clearTimeout(t);
