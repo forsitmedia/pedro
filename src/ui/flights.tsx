@@ -106,8 +106,8 @@ export function flightsFor(
     case 'power':
       if (e.slots?.length === 2 && e.slots[0].playerId !== e.slots[1].playerId) {
         const [a, b] = e.slots;
-        add(null, false, slotKey(a.playerId, a.slot), slotKey(b.playerId, b.slot), 700, 900);
-        add(null, false, slotKey(b.playerId, b.slot), slotKey(a.playerId, a.slot), 700, 900);
+        add(null, false, slotKey(a.playerId, a.slot), slotKey(b.playerId, b.slot), 300, 650);
+        add(null, false, slotKey(b.playerId, b.slot), slotKey(a.playerId, a.slot), 300, 650);
       }
       break;
   }

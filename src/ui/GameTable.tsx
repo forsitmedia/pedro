@@ -184,7 +184,7 @@ export function GameTable({
     for (const e of fresh) {
       if (e.kind === 'power') {
         const twoPlayers = e.slots?.length === 2 && e.slots[0].playerId !== e.slots[1].playerId;
-        powerHold = e.actorId === HUMAN_ID ? 300 : e.reveal ? 2600 : twoPlayers ? 1700 : 1400;
+        powerHold = e.actorId === HUMAN_ID ? 300 : e.reveal ? 2600 : twoPlayers ? 1100 : 1400;
       }
       if (e.kind === 'penalty' && e.actorId && e.slots?.length) {
         const by = e.penalty?.byId ? (e.penalty.byId === HUMAN_ID && me.name === 'You' ? 'YOU' : getPlayer(s, e.penalty.byId)?.name) : '';
@@ -531,7 +531,7 @@ export function GameTable({
   /** Seats keep a fixed size: with many (penalty) cards, the cards shrink instead of the seat growing. */
   const handScale = (p: Player): CSSProperties => {
     const cols = 2 + Math.max(0, Math.ceil((p.hand.length - 4) / 2));
-    return cols > 3 ? ({ '--cw': `calc(var(--base-cw) * ${3 / cols})` } as CSSProperties) : {};
+    return { '--cols': cols, ...(cols > 3 ? { '--cw': `calc(var(--base-cw) * ${3 / cols})` } : {}) } as CSSProperties;
   };
   const limitText = s.settings.limit ? ` / ${s.settings.limit}` : '';
   const discardHidden = hidden.discard ?? 0;
@@ -767,14 +767,14 @@ function Hint(props: {
   } else if (!isPlayPhase(s)) {
     text = '';
   } else if (!myTurn) {
-    text = `${props.shownCurName} is playing… Drag a matching card onto the discard pile to throw it!`;
+    text = `${props.shownCurName} is playing… Drag a matching card onto the pile to throw it!`;
   } else if (s.phase === 'turnStart') {
     text = takeMode
       ? `Tap one of your cards to swap it with the ${top ? cardName(top) : ''} (tap the pile again to cancel).`
       : `Your turn — tap the deck to draw${top && !s.topBurned ? `, or drag the ${cardName(top)} onto one of your cards` : ''}.`;
   } else {
-    const keep = 'drag it onto one of your cards to keep it';
-    const away = 'or tap the discard pile to throw it away';
+    const keep = 'drag it onto your card to keep it';
+    const away = 'or tap the pile to discard it';
     switch (activePower) {
       case 7:
         text = `Power 7: tap one of your cards to peek at it — ${keep}, ${away}.`;
@@ -791,7 +791,7 @@ function Hint(props: {
         text = `Power 10: tap an opponent to shuffle their cards — tap one of yours to swap, ${away}.`;
         break;
       default:
-        text = s.drawn ? `You drew ${cardName(s.drawn)}. Drag it onto one of your cards (or tap that card) to swap, ${away}.` : '';
+        text = s.drawn ? `You drew ${cardName(s.drawn)}. Tap or drag onto one of your cards to swap, ${away}.` : '';
     }
   }
 
