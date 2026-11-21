@@ -1,5 +1,6 @@
 import type { Action, GameState } from '../engine/types';
 import type { GameConnection } from '../game/connection';
+import { getIdentity } from './identity';
 import type { ClientMsg, RoomInfo, RoomSettings, ServerMsg, Visibility } from './protocol';
 
 export type ConnStatus = 'connecting' | 'open' | 'reconnecting' | 'closed';
@@ -40,6 +41,9 @@ export class OnlineGame implements GameConnection {
   private ws: WebSocket | null = null;
   private listeners = new Set<() => void>();
   private errorListeners = new Set<(m: string) => void>();
+  private infoListeners = new Set<(m: string) => void>();
+  /** Players you already sent a friend request to from this table. */
+  private befriended = new Set<string>();
   private retry = 0;
   private closedByUs = false;
   private readonly token: string;
@@ -91,6 +95,22 @@ export class OnlineGame implements GameConnection {
     this.listeners.add(fn);
     return () => {
       this.listeners.delete(fn);
+    };
+  };
+
+  canBefriend = (playerId: string) =>
+    playerId !== this.meId && !this.befriended.has(playerId) && !!this.room?.seats.find((s) => s.id === playerId && s.social && !s.isBot);
+
+  befriend = (playerId: string) => {
+    this.befriended.add(playerId);
+    this.send({ t: 'friend', seatId: playerId });
+    this.emit();
+  };
+
+  onInfo = (fn: (m: string) => void) => {
+    this.infoListeners.add(fn);
+    return () => {
+      this.infoListeners.delete(fn);
     };
   };
 
@@ -157,6 +177,8 @@ export class OnlineGame implements GameConnection {
           avatar: this.avatar,
           mode: this.mode,
           key: this.key,
+          pid: getIdentity().id,
+          psecret: getIdentity().secret,
         } satisfies ClientMsg),
       );
       this.emit();
@@ -183,6 +205,8 @@ export class OnlineGame implements GameConnection {
       } else if (msg.t === 'state') {
         this.state = msg.state;
         this.deadline = msg.deadlineIn === null ? null : Date.now() + msg.deadlineIn;
+      } else if (msg.t === 'info') {
+        for (const fn of this.infoListeners) fn(msg.message);
       } else if (msg.t === 'error') {
         if (msg.fatal) this.fatal = msg.message;
         for (const fn of this.errorListeners) fn(msg.message);

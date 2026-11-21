@@ -10,6 +10,6 @@
     "isolatedModules": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["worker", "src/engine", "src/bots", "src/game/runner.ts", "src/online/protocol.ts"],
+  "include": ["worker", "src/engine", "src/bots", "src/game/runner.ts", "src/online/protocol.ts", "src/online/names.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

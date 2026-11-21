@@ -172,6 +172,8 @@ export function GameTable({
   const deadlineLeft = deadlineMs ? Math.max(0, Math.ceil((deadlineMs - now) / 1000)) : null;
 
   useEffect(() => game.onError?.((m) => toast(m, 'error')), [game]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => game.onInfo?.((m) => toast(m, 'info')), [game]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [, refresh] = useState(0);
   const rects = useRef<Record<string, Rect>>({});
   const suppressClick = useRef(false);
 
@@ -612,7 +614,10 @@ export function GameTable({
     );
   };
 
-  const opponents = s.players.filter((p) => p.id !== HUMAN_ID);
+  // Clockwise from you, in turn order: whoever plays after you sits on your left, the one before you on your right.
+  // Everyone sees the same circle, just from their own chair.
+  const myIndex = Math.max(0, s.players.findIndex((p) => p.id === HUMAN_ID));
+  const opponents = [...s.players.slice(myIndex + 1), ...s.players.slice(0, myIndex)];
   /** Seats keep a fixed size: with many (penalty) cards, the cards shrink instead of the seat growing. */
   const handScale = (p: Player): CSSProperties => {
     const cols = 2 + Math.max(0, Math.ceil((p.hand.length - 4) / 2));
@@ -670,8 +675,22 @@ export function GameTable({
               }}
             >
               <div className="seat-head">
-                <Avatar code={avatarFor(p)} size={28} className="seat-avatar" />
+                <Avatar code={avatarFor(p)} size={28} className="seat-avatar" bot={p.isBot} />
                 <span className="seat-name">{p.name}</span>
+                {game.canBefriend?.(p.id) && (
+                  <button
+                    className="befriend"
+                    title={`Send ${p.name} a friend request`}
+                    aria-label={`Send ${p.name} a friend request`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      game.befriend?.(p.id);
+                      refresh((n) => n + 1);
+                    }}
+                  >
+                    <Icon name="plus" size={12} />
+                  </button>
+                )}
                 <span className="seat-score">
                   {p.total}
                   {limitText}

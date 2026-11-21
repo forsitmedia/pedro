@@ -1,30 +1,82 @@
 import { useEffect, useState } from 'react';
-import type { LobbyMsg, LobbySnapshot } from './protocol';
+import { getIdentity, resetIdentity } from './identity';
+import type { Board, LobbyClientMsg, LobbyMsg, LobbySnapshot, MeInfo, PlayerCard } from './protocol';
 
 /**
- * Live view of the lobby (players online, open tables) while the home page is open.
- * One shared connection, closed again when nobody is looking.
+ * Live connection to the lobby while the home page is open: players online, open tables,
+ * your friends and the weekly ranking. One shared connection, closed when nobody is looking.
  */
-let snapshot: LobbySnapshot | null = null;
+export interface LobbyData {
+  lobby: LobbySnapshot | null;
+  me: MeInfo | null;
+  board: Board | null;
+  /** Last message for you ("Friend request sent"…), with a counter so the same text shows again. */
+  notice: { text: string; n: number } | null;
+  /** Results of the last player search. */
+  search: { q: string; results: PlayerCard[] } | null;
+  /** The friend link you opened: who sent it (null: broken link). */
+  invite: { id: string; from: PlayerCard | null } | null;
+}
+
+let data: LobbyData = { lobby: null, me: null, board: null, notice: null, search: null, invite: null };
 let ws: WebSocket | null = null;
 let users = 0;
 let retry = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
-const listeners = new Set<(s: LobbySnapshot | null) => void>();
+let who: { name: string; avatar?: string } | null = null;
+const listeners = new Set<(d: LobbyData) => void>();
+/** Things to (re)send whenever the connection opens. */
+const onOpen = new Set<() => void>();
+
+/** Run `fn` now if connected, and again after every reconnect, until the returned cleanup is called. */
+export function whenConnected(fn: () => void): () => void {
+  onOpen.add(fn);
+  if (ws?.readyState === WebSocket.OPEN) fn();
+  return () => {
+    onOpen.delete(fn);
+  };
+}
+
+function update(patch: Partial<LobbyData>) {
+  data = { ...data, ...patch };
+  for (const fn of listeners) fn(data);
+}
+
+function send(msg: LobbyClientMsg) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+function auth() {
+  if (!who?.name.trim()) return;
+  const { id, secret } = getIdentity();
+  send({ t: 'auth', id, secret, name: who.name, avatar: who.avatar });
+}
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const sock = new WebSocket(`${proto}//${location.host}/api/lobby/ws`);
   ws = sock;
+  sock.onopen = () => {
+    auth();
+    for (const fn of onOpen) fn();
+  };
   sock.onmessage = (ev) => {
+    let msg: LobbyMsg;
     try {
-      const msg = JSON.parse(ev.data) as LobbyMsg;
-      if (msg.t !== 'lobby') return;
-      retry = 0;
-      snapshot = msg.lobby;
-      for (const fn of listeners) fn(snapshot);
+      msg = JSON.parse(ev.data);
     } catch {
-      /* ignore */
+      return;
+    }
+    retry = 0;
+    if (msg.t === 'lobby') update({ lobby: msg.lobby });
+    else if (msg.t === 'me') update({ me: msg.me });
+    else if (msg.t === 'board') update({ board: msg.board });
+    else if (msg.t === 'invite') update({ invite: { id: msg.id, from: msg.from } });
+    else if (msg.t === 'search') update({ search: { q: msg.q, results: msg.results } });
+    else if (msg.t === 'notice') update({ notice: { text: msg.message, n: (data.notice?.n ?? 0) + 1 } });
+    else if (msg.t === 'auth-fail') {
+      resetIdentity();
+      auth();
     }
   };
   sock.onclose = () => {
@@ -43,10 +95,30 @@ function disconnect() {
   sock?.close();
 }
 
-export function useLobby(): LobbySnapshot | null {
-  const [s, set] = useState(snapshot);
+/** Tell the lobby who you are (name and avatar shown to friends and in the ranking). */
+export function setLobbyPlayer(name: string, avatar?: string) {
+  if (who && who.name === name && who.avatar === avatar) return;
+  who = { name, avatar };
+  auth();
+}
+
+export const addFriend = (id: string) => send({ t: 'friend-add', code: id });
+export const searchPlayers = (q: string) => send({ t: 'search', q });
+export const checkInvite = (id: string, token: string) => send({ t: 'invite-check', id, token });
+export const acceptInvite = (id: string, token: string) => send({ t: 'invite-accept', id, token });
+
+/** Your friend link, to send on WhatsApp, Messages… */
+export function friendLink(me: MeInfo): string {
+  return `${location.origin}/f/${me.id}-${me.invite}`;
+}
+export const answerFriend = (id: string, ok: boolean) => send({ t: 'friend-answer', id, ok });
+export const removeFriend = (id: string) => send({ t: 'friend-remove', id });
+
+export function useLobby(): LobbyData {
+  const [d, set] = useState(data);
   useEffect(() => {
     listeners.add(set);
+    set(data);
     if (users++ === 0 && !ws) connect();
     // Phone back from sleep: reconnect at once.
     const onVisible = () => {
@@ -63,7 +135,7 @@ export function useLobby(): LobbySnapshot | null {
       if (--users === 0) disconnect();
     };
   }, []);
-  return s;
+  return d;
 }
 
 /** Ask the lobby for a quick-match table to sit at. */

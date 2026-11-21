@@ -7,6 +7,7 @@ import { Rules } from './Rules';
 import { getProfile, useProfile } from './profile';
 import { Avatar, avatarFor } from './art/Avatar';
 import { Icon } from './art/Icon';
+import { VisibilityPicker } from './VisibilityPicker';
 
 interface Props {
   code: string;
@@ -88,6 +89,15 @@ function Room({ game, onExit }: { game: OnlineGame; onExit: () => void }) {
   useSyncExternalStore(game.subscribe, () => game.version);
   const [showRules, setShowRules] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+  useEffect(
+    () =>
+      game.onInfo((m) => {
+        setInfo(m);
+        setTimeout(() => setInfo(null), 3500);
+      }),
+    [game],
+  );
   const room = game.room;
   const isHost = !!room && room.hostId === game.meId;
 
@@ -187,23 +197,20 @@ function Room({ game, onExit }: { game: OnlineGame; onExit: () => void }) {
               </button>
             </div>
             <p className="muted small">Send the link: {link}</p>
-            {room && (
-              <Seg
-                label="Who can join"
-                value={room.visibility}
-                disabled={!isHost}
-                options={[['open', 'Open to all'], ['private', 'Friends only']] as const}
-                onChange={(v) => settings && game.updateSettings(settings, v)}
-              />
+            {room && room.visibility !== 'quick' && (
+              <div className="field">
+                <span>Who can join</span>
+                <VisibilityPicker
+                  value={room.visibility}
+                  disabled={!isHost}
+                  onChange={(v) => settings && game.updateSettings(settings, v)}
+                />
+              </div>
             )}
-            <p className="muted small">
-              {room?.visibility === 'open'
-                ? 'Anyone in the lobby can sit down at this table.'
-                : 'People with the link sit down; others in the lobby can ask you to join.'}
-            </p>
           </>
         )}
 
+        {info && <p className="notice small">{info}</p>}
         {isHost && requests.length > 0 && (
           <div className="requests">
             {requests.map((r) => (
@@ -235,6 +242,11 @@ function Room({ game, onExit }: { game: OnlineGame; onExit: () => void }) {
                 {s.name}
                 {s.id === game.meId && <span className="muted"> (you)</span>}
                 {s.id === room?.hostId && <span className="badge">host</span>}
+                {game.canBefriend(s.id) && (
+                  <button className="btn btn--small seat-befriend" onClick={() => game.befriend(s.id)}>
+                    <Icon name="plus" size={14} /> Add friend
+                  </button>
+                )}
               </li>
             ))}
             {Array.from({ length: settings?.bots ?? 0 }, (_, i) => (
@@ -293,7 +305,7 @@ function Room({ game, onExit }: { game: OnlineGame; onExit: () => void }) {
         {quick ? (
           isHost && (
             <button className="btn btn--primary btn--big" onClick={() => game.start()}>
-              Start now{humans.length < QUICK_SEATS ? ' with computer players' : ''}
+              {humans.length >= 2 ? `Start now (${humans.length} players)` : 'Play against the computer now'}
             </button>
           )
         ) : isHost ? (
@@ -318,6 +330,7 @@ function Room({ game, onExit }: { game: OnlineGame; onExit: () => void }) {
 /** Quick match: counts down to the start. */
 function QuickWait({ room }: { room: RoomInfo | null }) {
   const autoStartIn = room?.autoStartIn ?? null;
+  const alone = (room?.seats.filter((s) => !s.isBot).length ?? 0) < 2;
   const [end, setEnd] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -332,7 +345,13 @@ function QuickWait({ room }: { room: RoomInfo | null }) {
     <div className="quick-wait">
       <h2>Finding players…</h2>
       <p className="tagline">
-        {left === null ? 'Getting the table ready' : left > 0 ? `Starting in ${left}s — empty seats get a computer player.` : 'Dealing the cards…'}
+        {left === null
+          ? 'Getting the table ready'
+          : left <= 0
+            ? 'Dealing the cards…'
+            : alone
+              ? `Nobody yet… in ${left}s you'll play against the computer.`
+              : `Starting in ${left}s — more people can still join.`}
       </p>
     </div>
   );

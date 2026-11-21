@@ -42,7 +42,8 @@ if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
     if (document.visibilityState === 'hidden') void ctx.suspend();
-    else void ctx.resume();
+    // Back on the page: pick up whatever music was chosen meanwhile.
+    else void ctx.resume().then(syncMusic, syncMusic);
   });
   window.addEventListener('pointerdown', unlock, { capture: true });
   window.addEventListener('keydown', unlock, { capture: true });
@@ -306,6 +307,8 @@ function startMusic(a: AudioContext, style: Exclude<MusicStyle, 'off'>) {
   gain.connect(lp).connect(a.destination);
   const m = { style, gain, next: a.currentTime + 0.1, step: 0, timer: 0 as unknown as ReturnType<typeof setInterval> };
   m.timer = setInterval(() => {
+    // After a pause (laptop asleep, slow tab) don't try to play every missed note at once: skip ahead.
+    if (m.next < a.currentTime - 0.2) m.next = a.currentTime + 0.05;
     while (m.next < a.currentTime + 0.5) {
       scheduleStep(a, gain, st, m.step % (8 * st.chords.length), m.next);
       m.next += 60 / st.bpm / 2;
@@ -323,14 +326,24 @@ function stopMusic(a: AudioContext) {
   m.gain.gain.cancelScheduledValues(a.currentTime);
   m.gain.gain.setValueAtTime(Math.max(0.0001, m.gain.gain.value), a.currentTime);
   m.gain.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.6);
-  setTimeout(() => m.gain.disconnect(), 1500);
+  // If the audio is paused the fade never runs: cut it right away.
+  const cut = () => {
+    try {
+      m.gain.disconnect();
+    } catch {
+      /* already gone */
+    }
+  };
+  if (a.state !== 'running') cut();
+  else setTimeout(cut, 900);
 }
 
 /** Start, stop or change the music to match the player's choice (only once sound is allowed). */
 function syncMusic() {
-  if (!ctx || ctx.state !== 'running') return;
+  if (!ctx) return;
   const want = getPrefs().musicStyle;
   if (music && music.style === want) return;
+  // Stopping always works; starting waits until the browser lets us play sound.
   if (music) stopMusic(ctx);
-  if (want !== 'off') startMusic(ctx, want);
+  if (want !== 'off' && ctx.state === 'running') startMusic(ctx, want);
 }

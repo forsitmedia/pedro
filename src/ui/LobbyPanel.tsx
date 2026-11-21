@@ -3,6 +3,7 @@ import { findQuickMatch, useLobby } from '../online/lobby';
 import { MAX_SEATS, QUICK_SEATS, type TableListing, type Visibility } from '../online/protocol';
 import { Avatar, avatarFor } from './art/Avatar';
 import { Icon } from './art/Icon';
+import { VisibilityPicker } from './VisibilityPicker';
 
 interface Props {
   /** Open a table: `create` = sit down straight away. */
@@ -15,7 +16,7 @@ interface Props {
 
 /** "Play online": who's around, quick match, open and private tables. */
 export function LobbyPanel({ onOpen, onCreate, ready, onNeedName }: Props) {
-  const lobby = useLobby();
+  const { lobby } = useLobby();
   const [mode, setMode] = useState<'open' | 'private'>('open');
   const [finding, setFinding] = useState(false);
   const [error, setError] = useState('');
@@ -48,24 +49,34 @@ export function LobbyPanel({ onOpen, onCreate, ready, onNeedName }: Props) {
       </div>
 
       <div className="online-actions">
-        <div className="online-action">
-          <button className="btn btn--primary btn--big" disabled={finding} onClick={quick}>
-            <Icon name="fire" size={22} /> {finding ? 'Finding a table…' : 'Quick match'}
-          </button>
-          <p className="muted small">Join whoever is waiting. Computer players fill the empty seats after 20 seconds.</p>
-        </div>
-        <div className="online-action">
-          <button className="btn btn--online btn--big" onClick={guard(() => onCreate(mode))}>
-            <Icon name="link" size={20} /> Create a table
-          </button>
-          <div className="seg seg--mini" role="radiogroup" aria-label="Who can join">
-            <button className={mode === 'open' ? 'on' : ''} onClick={() => setMode('open')} role="radio" aria-checked={mode === 'open'}>
-              Open to all
-            </button>
-            <button className={mode === 'private' ? 'on' : ''} onClick={() => setMode('private')} role="radio" aria-checked={mode === 'private'}>
-              Friends only
-            </button>
+        <div className="action-card action-card--quick">
+          <div className="action-card-head">
+            <span className="action-icon">
+              <Icon name="fire" size={26} />
+            </span>
+            <div>
+              <h3>Quick match</h3>
+              <p className="muted small">Play with whoever is waiting. Nobody there in 20 seconds? You play the computer.</p>
+            </div>
           </div>
+          <button className="btn btn--primary btn--big" disabled={finding} onClick={quick}>
+            {finding ? 'Finding a table…' : 'Find a game'}
+          </button>
+        </div>
+        <div className="action-card">
+          <div className="action-card-head">
+            <span className="action-icon action-icon--blue">
+              <Icon name="users" size={26} />
+            </span>
+            <div>
+              <h3>Your own table</h3>
+              <p className="muted small">Pick the rules and who can join.</p>
+            </div>
+          </div>
+          <VisibilityPicker value={mode} onChange={setMode} />
+          <button className="btn btn--online btn--big" onClick={guard(() => onCreate(mode))}>
+            Create the table
+          </button>
         </div>
       </div>
       {error && <p className="error small">{error}</p>}

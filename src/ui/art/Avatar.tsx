@@ -334,7 +334,20 @@ function AccessoryArt({ acc, art }: { acc: Accessory; art: SpeciesArt }) {
   }
 }
 
-export function Avatar({ code, size = 40, className, ring }: { code?: string | null; size?: number | string; className?: string; ring?: boolean }) {
+export function Avatar({
+  code,
+  size = 40,
+  className,
+  ring,
+  bot,
+}: {
+  code?: string | null;
+  size?: number | string;
+  className?: string;
+  ring?: boolean;
+  /** A computer player: little robot badge in the corner. */
+  bot?: boolean;
+}) {
   const p = parseAvatar(code) ?? { species: 'frog' as Species, color: 0, acc: 'none' as Accessory };
   const art = ART[p.species];
   return (
@@ -343,6 +356,23 @@ export function Avatar({ code, size = 40, className, ring }: { code?: string | n
       <g>{art.body}</g>
       <AccessoryArt acc={p.acc} art={art} />
       <circle cx="32" cy="32" r="30.5" fill="none" stroke={INK} strokeWidth={2.5} />
+      {bot && <BotBadge />}
     </svg>
+  );
+}
+
+/** "This is a computer player" sticker. */
+function BotBadge() {
+  return (
+    <g stroke={INK} strokeWidth={2} strokeLinejoin="round">
+      <title>Computer player</title>
+      <circle cx="50" cy="50" r="13" fill="#9fd8ff" />
+      <path d="M50 38.5v3.5" strokeLinecap="round" />
+      <circle cx="50" cy="38" r="1.8" fill="#ff5a6e" />
+      <rect x="42" y="42.5" width="16" height="12.5" rx="3.5" fill="#f4f4f8" />
+      <circle cx="46.5" cy="48.2" r="1.7" fill={INK} stroke="none" />
+      <circle cx="53.5" cy="48.2" r="1.7" fill={INK} stroke="none" />
+      <path d="M46.5 52h7" strokeWidth={1.6} strokeLinecap="round" />
+    </g>
   );
 }

@@ -136,7 +136,7 @@ export function RoundReveal({
       >
         <div className="reveal-name">
           {isWinner && <Icon name="crown" size="1.1em" />}
-          <Avatar code={avatarFor(p)} size="1.6em" />
+          <Avatar code={avatarFor(p)} size="1.6em" bot={p.isBot} />
           {nameOf(playerId)}
           {isCaller && <span className="badge badge--pedro">called Pedro</span>}
         </div>
@@ -190,7 +190,7 @@ export function RoundReveal({
           <span className="reveal-splash-kicker">Round {s.round} winner</span>
           <span className="splash-avatars">
             {roundWinners.map((r) => (
-              <Avatar key={r.playerId} code={avatarFor(getPlayer(s, r.playerId) ?? { name: '' })} size="100%" />
+              <Avatar key={r.playerId} code={avatarFor(getPlayer(s, r.playerId) ?? { name: '' })} size="100%" bot={getPlayer(s, r.playerId)?.isBot} />
             ))}
           </span>
           <span className="reveal-splash-name">{roundWinners.map((r) => nameOf(r.playerId)).join(' & ')}</span>
@@ -222,7 +222,7 @@ export function RoundReveal({
           <span className="reveal-splash-kicker">The Pedro Championship</span>
           <span className="reveal-cup" aria-hidden>
             <Icon name="trophy" size="100%" />
-            {champions[0] && <Avatar code={avatarFor(champions[0])} size="42%" className="cup-avatar" />}
+            {champions[0] && <Avatar code={avatarFor(champions[0])} size="42%" className="cup-avatar" bot={champions[0].isBot} />}
           </span>
           <span className="reveal-splash-name">{champions.map((p) => nameOf(p.id)).join(' & ')}</span>
           <span className="reveal-splash-sub">
@@ -241,7 +241,7 @@ export function RoundReveal({
               .map((r, place) => (
                 <div key={r.playerId} className={`standings-row ${r.playerId === meId ? 'is-me' : ''} ${roundScore(r) === bestRound ? 'is-best' : ''}`}>
                   <span className="standings-place">{over && place === 0 ? <Icon name="trophy" size="1.3em" /> : place + 1}</span>
-                  <Avatar code={avatarFor(getPlayer(s, r.playerId) ?? { name: '' })} size="1.8em" />
+                  <Avatar code={avatarFor(getPlayer(s, r.playerId) ?? { name: '' })} size="1.8em" bot={getPlayer(s, r.playerId)?.isBot} />
                   <span className="standings-name">
                     {nameOf(r.playerId)} {roundScore(r) === bestRound && <Icon name="crown" size="1em" />}
                   </span>

@@ -2242,7 +2242,9 @@ body {
   display: grid;
   grid-template-columns: minmax(260px, 340px) 1fr;
   grid-template-rows: auto auto;
-  grid-template-areas: 'profile online' 'profile play';
+  grid-template-areas: 'profile online' 'social play';
+  grid-template-rows: auto auto;
+  align-items: stretch;
   gap: clamp(14px, 2vw, 24px);
   align-content: center;
 }
@@ -2361,7 +2363,8 @@ body {
 @media (max-width: 860px) {
   .home-grid {
     grid-template-columns: 1fr;
-    grid-template-areas: 'profile' 'online' 'play';
+    grid-template-areas: 'profile' 'online' 'social' 'play';
+    grid-template-rows: none;
   }
   .setup-grid {
     grid-template-columns: 1fr;
@@ -3221,4 +3224,657 @@ html[data-table='midnight'] .reveal-screen {
 .seg--mini button,
 .seg button:disabled {
   text-transform: none;
+}
+
+/* Desktop: card sizes follow the window height too, so the whole table fits without scrolling. */
+@media (min-width: 761px) {
+  .table {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .felt {
+    min-height: 0;
+    padding: clamp(8px, 1.4vh, 16px);
+    gap: clamp(6px, 1.2vh, 14px) 18px;
+  }
+  .seat--opp {
+    --base-cw: clamp(30px, min(4.4vw, 5.6vh), 58px);
+  }
+  .seat--me {
+    --seat-cw: clamp(40px, min(6.5vw, 8.2vh), 88px);
+  }
+  .center {
+    --cw: clamp(44px, min(7.5vw, 9vh), 92px);
+  }
+  .felt--n4 .seat--opp,
+  .felt--n5 .seat--opp {
+    --base-cw: clamp(28px, min(3.5vw, 5vh), 50px);
+  }
+  .felt--n4 .seat--me,
+  .felt--n5 .seat--me {
+    --seat-cw: clamp(38px, min(5.4vw, 7.4vh), 76px);
+  }
+  .felt--n4 .center,
+  .felt--n5 .center {
+    --cw: clamp(40px, min(5.6vw, 8vh), 78px);
+  }
+  .sidebar {
+    max-height: none;
+    overflow-y: auto;
+  }
+}
+
+/* ───────────── home: action cards (quick match / your table) ───────────── */
+.online-actions {
+  gap: clamp(12px, 1.6vw, 18px);
+  align-items: stretch;
+}
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.07);
+}
+.action-card .btn--big {
+  width: 100%;
+  margin-top: auto;
+}
+.action-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.action-card-head h3 {
+  margin: 2px 0 4px;
+  font-size: 1.15rem;
+}
+.panel .action-card-head .muted {
+  margin: 0;
+  line-height: 1.35;
+}
+.action-icon {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  border: 2.5px solid #1a1206;
+  color: #1a1206;
+}
+.action-icon--blue {
+  background: #9fd0ff;
+}
+
+/* open / friends-only picker */
+.vis-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.vis-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.vis-option:not(:disabled):hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.vis-option.on {
+  border-color: var(--accent);
+  background: rgba(255, 204, 51, 0.12);
+}
+.vis-option:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.vis-option:disabled:not(.on) {
+  opacity: 0.4;
+}
+.vis-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+}
+.vis-option.on .vis-icon {
+  background: var(--accent);
+  color: #1a1206;
+  border: 2px solid #1a1206;
+}
+.vis-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.vis-text b {
+  font-size: 0.95rem;
+}
+.vis-text small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+/* ───────────── friends & ranking (left column) ───────────── */
+.social-panel {
+  grid-area: social;
+  gap: 12px;
+}
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.tabs button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-weight: 800;
+}
+.tabs button.on {
+  background: var(--accent);
+  color: #1a1206;
+}
+.tab-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ff5a6e;
+  color: #fff;
+  font-size: 0.7rem;
+  display: grid;
+  place-items: center;
+}
+.panel .social-empty {
+  margin: 0;
+  text-align: center;
+  padding: 10px 4px;
+}
+.friends,
+.ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.my-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel .my-code .muted {
+  margin: 0;
+}
+.code-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 2px dashed rgba(255, 204, 51, 0.6);
+  background: rgba(255, 204, 51, 0.08);
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+}
+.add-friend {
+  display: flex;
+  gap: 8px;
+}
+.add-friend input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.add-friend .btn {
+  white-space: nowrap;
+}
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 204, 51, 0.14);
+  color: var(--accent);
+  animation: request-in 0.3s ease-out;
+}
+.social-title {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.social-title .muted {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.person-avatar {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+.presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #10261c;
+  background: #6b7280;
+}
+.presence--online {
+  background: #4ade80;
+}
+.presence--waiting {
+  background: var(--accent);
+}
+.presence--playing {
+  background: #ff9f43;
+}
+.person-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.person-info b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-info small {
+  font-size: 0.74rem;
+}
+.mini-btn {
+  flex: none;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+.mini-btn--yes {
+  background: var(--accent);
+  color: #1a1206;
+  border-color: #1a1206;
+}
+.mini-btn--no {
+  background: #ff5a6e;
+  border-color: #1a1206;
+  color: #fff;
+}
+.mini-btn--ghost {
+  opacity: 0.45;
+}
+.mini-btn--ghost:hover {
+  opacity: 1;
+}
+
+.ranking-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.panel .ranking-head .muted {
+  margin: 0;
+}
+.points-help {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+}
+.points-help b {
+  color: var(--accent);
+}
+.last-champ {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.last-champ b {
+  color: var(--text);
+}
+.board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.board-row.is-me {
+  background: rgba(255, 204, 51, 0.14);
+  outline: 2px solid var(--accent);
+}
+.board-rank {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.medal {
+  border-radius: 50%;
+  color: #1a1206;
+  border: 2px solid #1a1206;
+}
+.medal--gold {
+  background: #ffcc33;
+}
+.medal--silver {
+  background: #d6dbe4;
+}
+.medal--bronze {
+  background: #e0a36b;
+}
+.board-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.board-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-name small {
+  font-size: 0.72rem;
+}
+.board-pts {
+  font-weight: 900;
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+.board-me {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  font-size: 0.85rem;
+  text-align: center;
+}
+.board-me b {
+  color: var(--accent);
+}
+@media (max-width: 1100px) and (min-width: 861px) {
+  .online-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Picker tiles: lock on top, short text underneath. */
+.vis-option {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 12px 8px;
+}
+.vis-text {
+  align-items: center;
+}
+.vis-icon {
+  width: 40px;
+  height: 40px;
+}
+html {
+  background: var(--felt-dark);
+}
+.action-card--quick .action-card-head {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: auto 0;
+}
+.action-card--quick .action-icon {
+  width: 64px;
+  height: 64px;
+}
+.action-card--quick .action-icon .icon {
+  width: 36px;
+  height: 36px;
+}
+.action-card--quick .btn--big {
+  margin-top: 0;
+}
+.add-friend input {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+}
+.add-friend input::placeholder {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  text-transform: none;
+}
+.add-friend input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+@media (min-width: 761px) {
+  /* Room for avatar, name and score even when the cards get small. */
+  .seat--opp {
+    min-width: 176px;
+  }
+}
+
+/* Friends: search by name */
+.find-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--muted);
+}
+.find-player:focus-within {
+  border-color: var(--accent);
+}
+.find-player input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+.find-player input::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}
+/* Rows line up: the online panel's table list fills the space, the friends panel scrolls. */
+.profile-panel {
+  justify-content: center;
+}
+.social-panel .people {
+  max-height: 220px;
+}
+
+/* Friend request from the table */
+.befriend {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #1a1206;
+  border: 2px solid #1a1206;
+  cursor: pointer;
+}
+.befriend:hover {
+  transform: scale(1.15);
+}
+.seat-befriend {
+  margin-left: auto;
+}
+
+/* Friend link box */
+.invite-box {
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 204, 51, 0.08);
+  border: 2px dashed rgba(255, 204, 51, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.panel .invite-box .muted {
+  margin: 0;
+}
+.invite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.invite-actions .btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn--whatsapp {
+  background: #25d366;
+  color: #08331a;
+  border-color: #08331a;
+  font-weight: 800;
+}
+.invite-modal {
+  align-items: center;
+  text-align: center;
+  width: min(420px, 100%);
+}
+.invite-modal h2 {
+  margin: 8px 0 0;
+}
+.invite-modal .btn--big {
+  width: 100%;
+}
+.invite-avatar {
+  animation: knock 1.8s ease-in-out infinite;
+}
+.invite-actions a.btn:not(.btn--whatsapp) {
+  color: var(--text);
+}
+.panel .person-info .muted,
+.panel .board-name .muted {
+  margin: 0;
+}
+
+/* One clean "share friendship link" button */
+.btn--share {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 2px solid #1a1206;
+  background: var(--accent);
+  color: #1a1206;
+  font-weight: 800;
+  box-shadow: 0 3px 0 #1a1206;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.btn--share:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #1a1206;
+}
+.btn--share.is-copied {
+  background: #4ade80;
 }

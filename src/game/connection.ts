@@ -15,4 +15,9 @@ export interface GameConnection {
   getTurnDeadline(): number | null;
   /** Online: is this player disconnected right now? */
   isAway?(playerId: string): boolean;
+  /** Online: can you send this player a friend request from the table? */
+  canBefriend?(playerId: string): boolean;
+  befriend?(playerId: string): void;
+  /** Online: good news for you ("Friend request sent"). */
+  onInfo?(fn: (message: string) => void): () => void;
 }

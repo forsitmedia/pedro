@@ -21,6 +21,9 @@ export type IconName =
   | 'robot'
   | 'eye'
   | 'lock'
+  | 'unlock'
+  | 'plus'
+  | 'copy'
   | 'users'
   | 'shuffle'
   | 'away'
@@ -126,6 +129,20 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" strokeWidth={2.4} />
       <rect x="5" y="10" width="14" height="10.5" rx="2.6" fill="currentColor" stroke="none" />
       <circle cx="12" cy="15" r="1.7" fill="#fff" stroke="none" />
+    </>
+  ),
+  unlock: (
+    <>
+      <path d="M7.5 10.5V8a4.5 4.5 0 0 1 8.6-1.9" fill="none" strokeWidth={2.4} />
+      <rect x="5" y="10" width="14" height="10.5" rx="2.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="15" r="1.7" fill="#fff" stroke="none" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" strokeWidth={3} />,
+  copy: (
+    <>
+      <rect x="8.5" y="8.5" width="11" height="12" rx="2.4" fill="currentColor" stroke="none" />
+      <path d="M15.5 5.5v-.3A1.7 1.7 0 0 0 13.8 3.5H6.2A1.7 1.7 0 0 0 4.5 5.2v9.6a1.7 1.7 0 0 0 1.7 1.7h.3" fill="none" strokeWidth={2.2} />
     </>
   ),
   users: (

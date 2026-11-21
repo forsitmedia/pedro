@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { newRoomCode, ROOM_CODE_RE, type Visibility } from '../online/protocol';
 import { LobbyPanel } from './LobbyPanel';
+import { SocialPanel } from './SocialPanel';
+import { InviteModal } from './InviteModal';
+import { setLobbyPlayer } from '../online/lobby';
 import { OnlineRoom } from './OnlineRoom';
 import type { Difficulty } from '../bots/bot';
 import { LocalGame, type LocalSetup } from '../game/localGame';
@@ -47,6 +50,15 @@ export function App() {
   const [botNames, setBotNames] = useState(shuffledBots);
   const [setup, setSetup] = useState<LocalSetup>(loadSetup);
   const [room, setRoom] = useState<RoomRoute | null>(roomFromUrl);
+  // A friend link: /f/<id>-<token>
+  const [invite, setInvite] = useState<{ id: string; token: string } | null>(() => {
+    const m = location.pathname.match(/^\/f\/([A-Z0-9]{8})-([a-z0-9]{6,16})\/?$/i);
+    return m ? { id: m[1].toUpperCase(), token: m[2].toLowerCase() } : null;
+  });
+  const closeInvite = () => {
+    setInvite(null);
+    history.replaceState(null, '', '/');
+  };
 
   useEffect(() => {
     const onPop = () => setRoom(roomFromUrl());
@@ -63,9 +75,9 @@ export function App() {
     }
   };
 
-  const openRoom = (code: string, create: boolean, mode?: Visibility) => {
+  const openRoom = (code: string, create: boolean, mode?: Visibility, key?: string) => {
     history.pushState(null, '', `/r/${code}`);
-    setRoom({ code, create, mode });
+    setRoom({ code, create, mode, key });
   };
   const leaveRoom = () => {
     history.pushState(null, '', '/');
@@ -93,6 +105,8 @@ export function App() {
   const [maker, setMaker] = useState<'first' | 'edit' | null>(() => (getProfile().created ? null : 'first'));
   const [showSettings, setShowSettings] = useState(false);
   const setName = (playerName: string) => saveSetup({ ...setup, playerName });
+  // Friends and the ranking show your name and avatar.
+  useEffect(() => setLobbyPlayer(setup.playerName.trim(), profile.avatar), [setup.playerName, profile.avatar]);
 
   let screen: JSX.Element;
   if (room) {
@@ -207,7 +221,7 @@ export function App() {
               <Avatar code={profile.avatar} size={44} ring />
               <span className="vs">vs</span>
               {botNames.slice(0, setup.bots).map((n) => (
-                <Avatar key={n} code={avatarFor({ name: n })} size={38} />
+                <Avatar key={n} code={avatarFor({ name: n })} size={38} bot />
               ))}
             </div>
             <button className="btn btn--primary btn--big" onClick={start}>
@@ -215,6 +229,14 @@ export function App() {
             </button>
           </section>
 
+          <SocialPanel
+            ready={!!name}
+            onNeedName={() => setMaker('edit')}
+            onJoin={(code, mode, key) => {
+              saveSetup(setup);
+              openRoom(code, true, mode, key);
+            }}
+          />
           <LobbyPanel
             ready={!!name}
             onNeedName={() => setMaker('edit')}
@@ -239,6 +261,9 @@ export function App() {
       {maker && <AvatarMaker first={maker === 'first'} name={setup.playerName} onName={setName} onClose={() => setMaker(null)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {showRules && <Rules onClose={() => setShowRules(false)} />}
+      {invite && !room && !game && !maker && (
+        <InviteModal id={invite.id} token={invite.token} ready={!!setup.playerName.trim()} onNeedName={() => setMaker('edit')} onClose={closeInvite} />
+      )}
     </>
   );
 }

@@ -3,12 +3,15 @@ import { viewFor } from '../src/engine/view';
 import type { Action } from '../src/engine/types';
 import { BOT_NAMES, GameRunner } from '../src/game/runner';
 import type { PedroLobby } from './lobby';
+import { cleanName } from '../src/online/names';
 import {
   DEFAULT_SETTINGS,
   MAX_SEATS,
   QUICK_SEATS,
   QUICK_WAIT_MS,
+  PLAYER_ID_RE,
   type ClientMsg,
+  type GameReport,
   type JoinRequest,
   type TableListing,
   type Visibility,
@@ -36,6 +39,9 @@ interface Seat {
   avatar?: string;
   token: string;
   connected: boolean;
+  /** Player id + secret, for friends and the ranking (never sent to other players). */
+  pid?: string;
+  psecret?: string;
 }
 
 interface Conn {
@@ -70,7 +76,11 @@ export class PedroRoom extends DurableObject<Env> {
   /** Private tables: the secret in the invite link. */
   private key = '';
   /** People from the lobby asking to sit at a private table. */
-  private knocks = new Map<string, { req: JoinRequest; token: string; ws: WebSocket }>();
+  private knocks = new Map<string, { req: JoinRequest; token: string; ws: WebSocket; pid?: string; psecret?: string }>();
+  /** This game's results were already sent to the ranking. */
+  private reported = false;
+  private gameKey = '';
+  private lastRound = 0;
   private knockSeq = 0;
   /** Quick match: when the game starts by itself. */
   private quickAt: number | null = null;
@@ -123,6 +133,15 @@ export class PedroRoom extends DurableObject<Env> {
         this.settings = cleanSettings(msg.settings, this.seats.length);
         if (msg.visibility === 'open' || msg.visibility === 'private') this.visibility = msg.visibility;
         return this.broadcastRoom();
+      case 'friend': {
+        const target = this.seats.find((s) => s.id === String(msg.seatId));
+        if (!target?.pid || !seat.pid || !seat.psecret || target.pid === seat.pid) return;
+        void this.lobby()
+          .requestFriend(seat.pid, seat.psecret, target.pid)
+          .then((message) => this.send(ws, { t: 'info', message }))
+          .catch(() => this.send(ws, { t: 'error', message: "Couldn't send the friend request — try again." }));
+        return;
+      }
       case 'admit':
         if (seat.id !== this.hostId) return;
         return this.admit(String(msg.id), !!msg.ok);
@@ -143,6 +162,8 @@ export class PedroRoom extends DurableObject<Env> {
     const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : '';
     if (!token) return this.kick(ws, 'Missing player token.');
     const avatar = cleanAvatar(msg.avatar);
+    const pid = typeof msg.pid === 'string' && PLAYER_ID_RE.test(msg.pid) ? msg.pid : undefined;
+    const psecret = pid && typeof msg.psecret === 'string' ? msg.psecret.slice(0, 64) : undefined;
     let seat = this.seats.find((s) => s.token === token);
     if (!seat) {
       if (this.runner) return this.kick(ws, 'This game has already started. Ask the host to start a new one.');
@@ -154,7 +175,7 @@ export class PedroRoom extends DurableObject<Env> {
         this.key = key || crypto.randomUUID().slice(0, 8);
         if (this.visibility === 'quick') this.settings = { ...DEFAULT_SETTINGS };
       } else if (this.visibility === 'private' && key !== this.key) {
-        return this.knock(ws, token, cleanName(msg.name), avatar);
+        return this.knock(ws, token, cleanName(msg.name), avatar, pid, psecret);
       }
       if (this.seats.length >= (this.visibility === 'quick' ? QUICK_SEATS : MAX_SEATS)) {
         return this.kick(ws, `This table is full. Try another one!`);
@@ -162,6 +183,10 @@ export class PedroRoom extends DurableObject<Env> {
       seat = this.addSeat(token, msg.name, avatar);
     }
     if (avatar) seat.avatar = avatar;
+    if (pid) {
+      seat.pid = pid;
+      seat.psecret = psecret;
+    }
     seat.connected = true;
     conn.seatId = seat.id;
     this.broadcastRoom();
@@ -180,11 +205,11 @@ export class PedroRoom extends DurableObject<Env> {
 
   /* ───────────── private tables: knocking at the door ───────────── */
 
-  private knock(ws: WebSocket, token: string, name: string, avatar?: string) {
+  private knock(ws: WebSocket, token: string, name: string, avatar?: string, pid?: string, psecret?: string) {
     for (const [id, k] of this.knocks) if (k.token === token) this.knocks.delete(id); // asking again
     if (this.knocks.size >= MAX_KNOCKS) return this.kick(ws, 'Too many people are asking to join this table right now.');
     const id = `k${++this.knockSeq}`;
-    this.knocks.set(id, { req: { id, name, avatar }, token, ws });
+    this.knocks.set(id, { req: { id, name, avatar }, token, ws, pid, psecret });
     this.send(ws, { t: 'knocking' });
     this.broadcastRoom();
   }
@@ -208,6 +233,8 @@ export class PedroRoom extends DurableObject<Env> {
       return this.broadcastRoom();
     }
     const seat = this.addSeat(k.token, k.req.name, k.req.avatar);
+    seat.pid = k.pid;
+    seat.psecret = k.psecret;
     conn.seatId = seat.id;
     this.broadcastRoom();
   }
@@ -249,10 +276,10 @@ export class PedroRoom extends DurableObject<Env> {
     if (this.quickTimer) clearTimeout(this.quickTimer);
     this.quickTimer = null;
     this.quickAt = null;
-    // Quick match: whoever arrived plays, computer players fill the empty seats.
+    // Quick match: people play people. Computer players only when nobody else showed up.
     if (this.visibility === 'quick') {
       this.seats = this.seats.filter((s) => s.connected);
-      this.settings = { ...this.settings, bots: Math.max(0, QUICK_SEATS - this.seats.length) };
+      this.settings = { ...this.settings, bots: this.seats.length >= 2 ? 0 : QUICK_SEATS - 1 };
     }
     const settings = cleanSettings(this.settings, this.seats.length);
     // People still waiting at the door won't get in now.
@@ -274,7 +301,16 @@ export class PedroRoom extends DurableObject<Env> {
         isAway: (id) => !this.seats.find((s) => s.id === id)?.connected,
       },
     );
-    this.runner.subscribe(() => this.broadcastState());
+    this.reported = false;
+    this.gameKey = `${this.code}:${Date.now()}`;
+    this.lastRound = 0;
+    this.runner.subscribe(() => {
+      this.broadcastState();
+      this.afterGameChange();
+    });
+    // Remember who sat together ("played with recently", to add them as friends).
+    const pids = this.seats.map((s) => s.pid).filter((p): p is string => !!p);
+    if (pids.length >= 2) void this.lobby().playedTogether(pids).catch(() => {});
     this.broadcastRoom();
     this.broadcastState();
   }
@@ -350,7 +386,7 @@ export class PedroRoom extends DurableObject<Env> {
       key: this.visibility === 'private' ? this.key : undefined,
       hostId: this.hostId,
       seats: [
-        ...this.seats.map((s) => ({ id: s.id, name: s.name, avatar: s.avatar, isBot: false, connected: s.connected })),
+        ...this.seats.map((s) => ({ id: s.id, name: s.name, avatar: s.avatar, isBot: false, connected: s.connected, social: !!s.pid })),
         ...this.botSeats.map((b) => ({ id: b.id, name: b.name, isBot: true, connected: true })),
       ],
       settings: this.settings,
@@ -361,6 +397,25 @@ export class PedroRoom extends DurableObject<Env> {
   private broadcastRoom() {
     for (const [ws, c] of this.conns) if (c.seatId) this.send(ws, { t: 'room', room: this.roomInfo(c.seatId), you: c.seatId });
     this.scheduleReport();
+  }
+
+  /** New round → update the lobby. Game over → send the results to the weekly ranking. */
+  private afterGameChange() {
+    const st = this.runner?.getState();
+    if (!st) return;
+    if (st.round !== this.lastRound) {
+      this.lastRound = st.round;
+      this.scheduleReport();
+    }
+    if (st.phase !== 'gameOver' || this.reported) return;
+    this.reported = true;
+    const players: GameReport['players'] = [];
+    for (const seat of this.seats) {
+      const p = st.players.find((x) => x.id === seat.id);
+      if (p && seat.pid && seat.psecret) players.push({ pid: seat.pid, secret: seat.psecret, total: p.total });
+    }
+    // Only games between at least two people count.
+    if (players.length >= 2) void this.lobby().gameOver({ key: this.gameKey, players }).catch(() => {});
   }
 
   /* ───────────── telling the lobby about this table ───────────── */
@@ -390,14 +445,14 @@ export class PedroRoom extends DurableObject<Env> {
       const listing: TableListing = {
         code: this.code,
         visibility: this.visibility,
-        players: humans.map((s) => ({ name: s.name, avatar: s.avatar })),
+        players: humans.map((s) => ({ name: s.name, avatar: s.avatar, pid: s.pid })),
         bots: this.botSeats.length || (this.runner ? 0 : this.settings.bots),
         started: !!this.runner,
         round: state?.round,
         limit: this.settings.limit,
         updatedAt: Date.now(),
       };
-      await this.lobby().report(listing);
+      await this.lobby().report(listing, this.visibility === 'private' ? this.key : undefined);
       this.listed = true;
     } catch {
       /* the lobby is only a bonus: the table keeps working */
@@ -468,10 +523,6 @@ export class PedroRoom extends DurableObject<Env> {
   }
 }
 
-function cleanName(raw: unknown): string {
-  const name = typeof raw === 'string' ? raw.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 16) : '';
-  return name || 'Player';
-}
 
 /** Avatar code like "frog.2.shades" (anything else is ignored). */
 function cleanAvatar(raw: unknown): string | undefined {
