@@ -5,6 +5,8 @@ import {
   POINTS,
   QUICK_SEATS,
   gamePoints,
+  levelFor,
+  type PlayerProfile,
   type Board,
   type BoardRow,
   type FriendInfo,
@@ -72,6 +74,7 @@ export class PedroLobby extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS friends (a TEXT, b TEXT, status TEXT, at INTEGER, PRIMARY KEY (a, b));
       CREATE TABLE IF NOT EXISTS recent (a TEXT, b TEXT, at INTEGER, PRIMARY KEY (a, b));
       CREATE TABLE IF NOT EXISTS games (key TEXT PRIMARY KEY, at INTEGER);
+      CREATE TABLE IF NOT EXISTS h2h (a TEXT, b TEXT, games INTEGER, wins INTEGER, PRIMARY KEY (a, b));
       CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, token TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS players_name ON players (name COLLATE NOCASE);
     `);
@@ -128,6 +131,8 @@ export class PedroLobby extends DurableObject<Env> {
         if (text) this.send(ws, { t: 'notice', message: text });
         return;
       }
+      case 'profile':
+        return this.send(ws, { t: 'profile', id: String(msg.id), profile: this.profile(me, String(msg.id)) });
       case 'invite-check':
         return this.send(ws, { t: 'invite', id: String(msg.id), from: this.checkInvite(String(msg.id), String(msg.token)) });
       case 'invite-accept': {
@@ -197,7 +202,7 @@ export class PedroLobby extends DurableObject<Env> {
         `${esc}%`,
       )
       .toArray()
-      .map((r) => ({ id: r.id, name: r.name, avatar: r.avatar ?? undefined }));
+      .map((r) => ({ id: r.id, name: r.name, avatar: r.avatar ?? undefined, level: levelFor(this.totals(r.id).xp).level }));
     this.send(ws, { t: 'search', q, results });
   }
 
@@ -335,6 +340,19 @@ export class PedroLobby extends DurableObject<Env> {
         won ? 1 : 0,
       );
     }
+    // Head to head: for every pair, one more game together, and a win for whoever ended lower.
+    for (const v of valid) {
+      for (const o of valid) {
+        if (v.pid === o.pid) continue;
+        this.sql.exec(
+          `INSERT INTO h2h (a, b, games, wins) VALUES (?, ?, 1, ?)
+           ON CONFLICT (a, b) DO UPDATE SET games = games + 1, wins = wins + excluded.wins`,
+          v.pid,
+          o.pid,
+          v.total < o.total ? 1 : 0,
+        );
+      }
+    }
     this.sql.exec('DELETE FROM games WHERE at < ?', Date.now() - 7 * DAY);
     const msg = JSON.stringify({ t: 'board', board: this.board() } satisfies LobbyMsg);
     for (const ws of this.ctx.getWebSockets()) this.raw(ws, msg);
@@ -406,13 +424,47 @@ export class PedroLobby extends DurableObject<Env> {
           limit,
         )
         .toArray()
-        .map((r): BoardRow => ({ ...r, avatar: r.avatar ?? undefined }));
+        .map((r): BoardRow => ({ ...r, avatar: r.avatar ?? undefined, level: levelFor(this.totals(r.id).xp).level }));
     return { week, ends, top: rows(week, BOARD_SIZE), lastChampion: rows(weekOf(now - 7 * DAY).week, 1)[0] };
   }
 
   private card(id: string): PlayerCard | null {
     const r = this.sql.exec<{ id: string; name: string; avatar: string | null }>('SELECT id, name, avatar FROM players WHERE id = ?', id).toArray()[0];
-    return r ? { id: r.id, name: r.name, avatar: r.avatar ?? undefined } : null;
+    return r ? { id: r.id, name: r.name, avatar: r.avatar ?? undefined, level: levelFor(this.totals(id).xp).level } : null;
+  }
+
+  /** All-time XP, games and wins (the weekly rankings added up). */
+  private totals(id: string): { xp: number; games: number; wins: number } {
+    const r = this.sql
+      .exec<{ xp: number | null; games: number | null; wins: number | null }>('SELECT SUM(points) AS xp, SUM(games) AS games, SUM(wins) AS wins FROM weekly WHERE id = ?', id)
+      .one();
+    return { xp: r.xp ?? 0, games: r.games ?? 0, wins: r.wins ?? 0 };
+  }
+
+  /** Someone's card, as seen by `me`. */
+  private profile(me: string, id: string): PlayerProfile | null {
+    if (!PLAYER_ID_RE.test(id)) return null;
+    const c = this.card(id);
+    if (!c) return null;
+    const t = this.totals(id);
+    const { week } = weekOf(Date.now());
+    const wk = this.sql.exec<{ points: number; games: number }>('SELECT points, games FROM weekly WHERE week = ? AND id = ?', week, id).toArray()[0];
+    const rank =
+      wk && wk.games >= POINTS.minGames
+        ? this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM weekly WHERE week = ? AND games >= ? AND points > ?', week, POINTS.minGames, wk.points).one().n + 1
+        : null;
+    const h = this.sql.exec<{ games: number; wins: number }>('SELECT games, wins FROM h2h WHERE a = ? AND b = ?', me, id).toArray()[0];
+    const theirs = this.sql.exec<{ wins: number }>('SELECT wins FROM h2h WHERE a = ? AND b = ?', id, me).toArray()[0];
+    const since = this.sql.exec<{ at: number }>("SELECT at FROM friends WHERE a = ? AND b = ? AND status = 'ok'", me, id).toArray()[0];
+    return {
+      ...c,
+      xp: t.xp,
+      games: t.games,
+      wins: t.wins,
+      week: { points: wk?.points ?? 0, rank },
+      together: { games: h?.games ?? 0, myWins: h?.wins ?? 0, theirWins: theirs?.wins ?? 0 },
+      friendsSince: since?.at,
+    };
   }
 
   private me(id: string, online: Set<string>, tableOf: Map<string, TableListing>): MeInfo {
@@ -420,7 +472,7 @@ export class PedroLobby extends DurableObject<Env> {
       this.sql
         .exec<{ id: string; name: string; avatar: string | null }>(sql, id)
         .toArray()
-        .map((r) => ({ id: r.id, name: r.name, avatar: r.avatar ?? undefined }));
+        .map((r) => ({ id: r.id, name: r.name, avatar: r.avatar ?? undefined, level: levelFor(this.totals(r.id).xp).level }));
     const friends: FriendInfo[] = cards(
       "SELECT p.id, p.name, p.avatar FROM friends f JOIN players p ON p.id = f.b WHERE f.a = ? AND f.status = 'ok' ORDER BY p.seen DESC",
     ).map((f) => {
@@ -458,7 +510,7 @@ export class PedroLobby extends DurableObject<Env> {
       mine && mine.games >= POINTS.minGames
         ? this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM weekly WHERE week = ? AND games >= ? AND points > ?', week, POINTS.minGames, mine.points).one().n + 1
         : null;
-    return { id, friends, requests, sent, recent, online: onlineCards, invite: this.inviteToken(id), week: { rank, points: mine?.points ?? 0, wins: mine?.wins ?? 0, games: mine?.games ?? 0 } };
+    return { id, friends, requests, sent, recent, online: onlineCards, invite: this.inviteToken(id), total: this.totals(id), week: { rank, points: mine?.points ?? 0, wins: mine?.wins ?? 0, games: mine?.games ?? 0 } };
   }
 
   /** Who's online and at which table, for the friends lists. */

@@ -4,6 +4,7 @@ import type { MeInfo } from '../online/protocol';
 import { POINTS, type BoardRow, type FriendInfo, type PlayerCard, type Visibility } from '../online/protocol';
 import { Avatar, avatarFor } from './art/Avatar';
 import { Icon } from './art/Icon';
+import { LevelChip, PlayerSheet } from './PlayerSheet';
 
 interface Props {
   /** Sit at a friend's table (private tables come with their key). */
@@ -17,6 +18,7 @@ export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
   const { me, board, notice } = useLobby();
   const [tab, setTab] = useState<'friends' | 'ranking'>('friends');
   const requests = me?.requests.length ?? 0;
+  const [openId, setOpenId] = useState<string | null>(null);
 
   return (
     <section className="panel social-panel">
@@ -37,9 +39,20 @@ export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
           to add friends and enter the ranking.
         </p>
       ) : tab === 'friends' ? (
-        <Friends onJoin={onJoin} notice={notice} />
+        <Friends onJoin={onJoin} notice={notice} onOpenPlayer={setOpenId} />
       ) : (
-        <Ranking board={board} myId={me?.id} myWeek={me?.week} />
+        <Ranking board={board} myId={me?.id} myWeek={me?.week} onOpenPlayer={setOpenId} />
+      )}
+      {openId && (
+        <PlayerSheet
+          id={openId}
+          friend={me?.friends.find((f) => f.id === openId)}
+          onClose={() => setOpenId(null)}
+          onJoin={(code, mode, key) => {
+            setOpenId(null);
+            onJoin(code, mode, key);
+          }}
+        />
       )}
     </section>
   );
@@ -47,7 +60,15 @@ export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
 
 /* ───────────── friends ───────────── */
 
-function Friends({ onJoin, notice }: { onJoin: Props['onJoin']; notice: { text: string; n: number } | null }) {
+function Friends({
+  onJoin,
+  notice,
+  onOpenPlayer,
+}: {
+  onJoin: Props['onJoin'];
+  notice: { text: string; n: number } | null;
+  onOpenPlayer: (id: string) => void;
+}) {
   const { me, search } = useLobby();
   const [q, setQ] = useState('');
   const [shownNotice, setShownNotice] = useState<string | null>(null);
@@ -149,7 +170,7 @@ function Friends({ onJoin, notice }: { onJoin: Props['onJoin']; notice: { text: 
           ) : (
             <ul className="people">
               {me.friends.map((f) => (
-                <FriendRow key={f.id} f={f} onJoin={onJoin} />
+                <FriendRow key={f.id} f={f} onJoin={onJoin} onOpen={() => onOpenPlayer(f.id)} />
               ))}
             </ul>
           )}
@@ -237,24 +258,49 @@ function InviteLink({ me }: { me: MeInfo }) {
   );
 }
 
-function Person({ p, status, sub, children }: { p: PlayerCard; status?: FriendInfo['status']; sub?: string; children?: React.ReactNode }) {
-  return (
-    <li className="person">
+function Person({
+  p,
+  status,
+  sub,
+  children,
+  onOpen,
+}: {
+  p: PlayerCard;
+  status?: FriendInfo['status'];
+  sub?: string;
+  children?: React.ReactNode;
+  /** Tap the row to see their card. */
+  onOpen?: () => void;
+}) {
+  const body = (
+    <>
       <span className="person-avatar">
         <Avatar code={avatarFor(p)} size={36} />
         {status && <span className={`presence presence--${status}`} />}
       </span>
       <span className="person-info">
-        <b>{p.name}</b>
+        <b>
+          {p.name} <LevelChip level={p.level} />
+        </b>
         {sub && <small className="muted">{sub}</small>}
       </span>
+    </>
+  );
+  return (
+    <li className={`person ${onOpen ? 'is-tappable' : ''}`}>
+      {onOpen ? (
+        <button className="person-open" onClick={onOpen} aria-label={`See ${p.name}'s profile`}>
+          {body}
+        </button>
+      ) : (
+        body
+      )}
       {children}
     </li>
   );
 }
 
-function FriendRow({ f, onJoin }: { f: FriendInfo; onJoin: Props['onJoin'] }) {
-  const [confirm, setConfirm] = useState(false);
+function FriendRow({ f, onJoin, onOpen }: { f: FriendInfo; onJoin: Props['onJoin']; onOpen: () => void }) {
   const sub =
     f.status === 'playing'
       ? `Playing${f.table?.round ? ` · round ${f.table.round}` : ''}`
@@ -265,22 +311,14 @@ function FriendRow({ f, onJoin }: { f: FriendInfo; onJoin: Props['onJoin'] }) {
           : 'Offline';
   const canJoin = f.status === 'waiting' && f.table && f.table.visibility !== 'quick';
   return (
-    <Person p={f} status={f.status} sub={sub}>
-      {canJoin && (
+    <Person p={f} status={f.status} sub={sub} onOpen={onOpen}>
+      {canJoin ? (
         <button className="btn btn--small btn--primary" onClick={() => onJoin(f.table!.code, f.table!.visibility, f.table!.key)}>
           Join
         </button>
+      ) : (
+        <Icon name="chevron" size={16} className="person-chevron" />
       )}
-      {!canJoin &&
-        (confirm ? (
-          <button className="mini-btn mini-btn--no" onClick={() => removeFriend(f.id)} title="Remove friend">
-            Remove
-          </button>
-        ) : (
-          <button className="mini-btn mini-btn--ghost" onClick={() => setConfirm(true)} aria-label={`Remove ${f.name}`} title="Remove friend">
-            <Icon name="close" size={14} />
-          </button>
-        ))}
     </Person>
   );
 }
@@ -298,7 +336,9 @@ function Ranking({
   board,
   myId,
   myWeek,
+  onOpenPlayer,
 }: {
+  onOpenPlayer: (id: string) => void;
   board: ReturnType<typeof useLobby>['board'];
   myId?: string;
   myWeek?: { rank: number | null; points: number; wins: number; games: number };
@@ -344,7 +384,7 @@ function Ranking({
       ) : (
         <ol className="board">
           {board.top.map((r, i) => (
-            <BoardLine key={r.id} r={r} rank={i + 1} me={r.id === myId} />
+            <BoardLine key={r.id} r={r} rank={i + 1} me={r.id === myId} onOpen={() => onOpenPlayer(r.id)} />
           ))}
         </ol>
       )}
@@ -365,14 +405,16 @@ function Ranking({
   );
 }
 
-function BoardLine({ r, rank, me }: { r: BoardRow; rank: number; me: boolean }) {
+function BoardLine({ r, rank, me, onOpen }: { r: BoardRow; rank: number; me: boolean; onOpen: () => void }) {
   const medal = rank <= 3 ? ['gold', 'silver', 'bronze'][rank - 1] : null;
   return (
-    <li className={`board-row ${me ? 'is-me' : ''}`}>
+    <li className={`board-row ${me ? 'is-me' : ''}`} onClick={onOpen} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOpen()}>
       <span className={`board-rank ${medal ? `medal medal--${medal}` : ''}`}>{rank}</span>
       <Avatar code={avatarFor(r)} size={30} />
       <span className="board-name">
-        <b>{r.name}</b>
+        <b>
+          {r.name} <LevelChip level={r.level} />
+        </b>
         <small className="muted">
           {r.wins}W · {r.games} games
         </small>

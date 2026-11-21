@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getIdentity, resetIdentity } from './identity';
-import type { Board, LobbyClientMsg, LobbyMsg, LobbySnapshot, MeInfo, PlayerCard } from './protocol';
+import type { Board, LobbyClientMsg, LobbyMsg, LobbySnapshot, MeInfo, PlayerCard, PlayerProfile } from './protocol';
 
 /**
  * Live connection to the lobby while the home page is open: players online, open tables,
@@ -16,9 +16,11 @@ export interface LobbyData {
   search: { q: string; results: PlayerCard[] } | null;
   /** The friend link you opened: who sent it (null: broken link). */
   invite: { id: string; from: PlayerCard | null } | null;
+  /** The last player card asked for. */
+  profile: { id: string; profile: PlayerProfile | null } | null;
 }
 
-let data: LobbyData = { lobby: null, me: null, board: null, notice: null, search: null, invite: null };
+let data: LobbyData = { lobby: null, me: null, board: null, notice: null, search: null, invite: null, profile: null };
 let ws: WebSocket | null = null;
 let users = 0;
 let retry = 0;
@@ -71,6 +73,7 @@ function connect() {
     if (msg.t === 'lobby') update({ lobby: msg.lobby });
     else if (msg.t === 'me') update({ me: msg.me });
     else if (msg.t === 'board') update({ board: msg.board });
+    else if (msg.t === 'profile') update({ profile: { id: msg.id, profile: msg.profile } });
     else if (msg.t === 'invite') update({ invite: { id: msg.id, from: msg.from } });
     else if (msg.t === 'search') update({ search: { q: msg.q, results: msg.results } });
     else if (msg.t === 'notice') update({ notice: { text: msg.message, n: (data.notice?.n ?? 0) + 1 } });
@@ -104,6 +107,7 @@ export function setLobbyPlayer(name: string, avatar?: string) {
 
 export const addFriend = (id: string) => send({ t: 'friend-add', code: id });
 export const searchPlayers = (q: string) => send({ t: 'search', q });
+export const requestProfile = (id: string) => send({ t: 'profile', id });
 export const checkInvite = (id: string, token: string) => send({ t: 'invite-check', id, token });
 export const acceptInvite = (id: string, token: string) => send({ t: 'invite-accept', id, token });
 

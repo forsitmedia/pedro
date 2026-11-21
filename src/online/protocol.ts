@@ -110,6 +110,52 @@ export interface PlayerCard {
   id: string;
   name: string;
   avatar?: string;
+  /** Level from all-time XP (shown next to the name). */
+  level?: number;
+}
+
+/* ───────────── levels & leagues ───────────── */
+
+export interface League {
+  id: 'bronze' | 'silver' | 'gold' | 'diamond' | 'legend';
+  name: string;
+  /** First level of this league. */
+  from: number;
+  color: string;
+}
+
+export const LEAGUES: League[] = [
+  { id: 'bronze', name: 'Bronze', from: 1, color: '#d08a52' },
+  { id: 'silver', name: 'Silver', from: 5, color: '#c9d3e0' },
+  { id: 'gold', name: 'Gold', from: 10, color: '#ffcc33' },
+  { id: 'diamond', name: 'Diamond', from: 16, color: '#7cf0ff' },
+  { id: 'legend', name: 'Pedro Legend', from: 25, color: '#ff8fc7' },
+];
+
+/**
+ * XP needed to reach a level: 40, 100, 180, 280… (each level asks a bit more).
+ * A game is worth ~5–30 XP: level 2 after ~3 games, Silver ~18, Gold ~65, Diamond ~170, Legend ~400.
+ */
+export const xpForLevel = (level: number) => 10 * (level - 1) * (level + 2);
+
+/** Level, league and progress for some all-time XP (= ranking points, never reset). */
+export function levelFor(xp: number): { level: number; league: League; into: number; need: number } {
+  let level = 1;
+  while (xpForLevel(level + 1) <= xp) level++;
+  const league = [...LEAGUES].reverse().find((l) => level >= l.from)!;
+  return { level, league, into: xp - xpForLevel(level), need: xpForLevel(level + 1) - xpForLevel(level) };
+}
+
+/** Everything on a player's card (tap a friend). */
+export interface PlayerProfile extends PlayerCard {
+  xp: number;
+  games: number;
+  wins: number;
+  week: { points: number; rank: number | null };
+  /** Online games you played together, and who won (lowest total). */
+  together: { games: number; myWins: number; theirWins: number };
+  /** Friends since (ms), if you are friends. */
+  friendsSince?: number;
 }
 
 export interface FriendInfo extends PlayerCard {
@@ -133,6 +179,8 @@ export interface MeInfo {
   invite: string;
   /** Your place in this week's ranking. */
   week: { rank: number | null; points: number; wins: number; games: number };
+  /** All-time: XP (→ level and league), games and wins. */
+  total: { xp: number; games: number; wins: number };
 }
 
 export interface BoardRow extends PlayerCard {
@@ -176,6 +224,8 @@ export type LobbyMsg =
   | { t: 'me'; me: MeInfo }
   | { t: 'board'; board: Board }
   | { t: 'notice'; message: string }
+  /** A player's card (null: not found). */
+  | { t: 'profile'; id: string; profile: PlayerProfile | null }
   /** Who sent this friend link (null: the link doesn't work). */
   | { t: 'invite'; id: string; from: PlayerCard | null }
   /** Players whose name matches what you typed. */
@@ -188,6 +238,7 @@ export type LobbyClientMsg =
   | { t: 'friend-add'; code: string }
   | { t: 'search'; q: string }
   | { t: 'invite-check'; id: string; token: string }
+  | { t: 'profile'; id: string }
   | { t: 'invite-accept'; id: string; token: string }
   | { t: 'friend-answer'; id: string; ok: boolean }
   | { t: 'friend-remove'; id: string };

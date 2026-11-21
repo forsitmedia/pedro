@@ -3,6 +3,7 @@ import { newRoomCode, ROOM_CODE_RE, type Visibility } from '../online/protocol';
 import { LobbyPanel } from './LobbyPanel';
 import { SocialPanel } from './SocialPanel';
 import { InviteModal } from './InviteModal';
+import { MyLevel } from './PlayerSheet';
 import { setLobbyPlayer } from '../online/lobby';
 import { OnlineRoom } from './OnlineRoom';
 import type { Difficulty } from '../bots/bot';
@@ -161,6 +162,7 @@ export function App() {
             <button className="btn btn--small" onClick={() => setMaker('edit')}>
               Edit player
             </button>
+            {name && <MyLevel />}
             <div className="stats">
               <Stat label="Games" value={st.games} />
               <Stat label="Wins" value={st.wins} />

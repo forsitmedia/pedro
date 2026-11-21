@@ -23,6 +23,7 @@ export type IconName =
   | 'lock'
   | 'unlock'
   | 'plus'
+  | 'chevron'
   | 'copy'
   | 'users'
   | 'shuffle'
@@ -139,6 +140,7 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" strokeWidth={3} />,
+  chevron: <path d="M9 5l7 7-7 7" strokeWidth={2.8} />,
   copy: (
     <>
       <rect x="8.5" y="8.5" width="11" height="12" rx="2.4" fill="currentColor" stroke="none" />

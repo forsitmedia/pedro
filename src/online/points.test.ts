@@ -27,3 +27,17 @@ describe('names', () => {
     expect(cleanName('  ')).toBe('Player');
   });
 });
+
+import { levelFor, xpForLevel } from './protocol';
+
+describe('levels and leagues', () => {
+  it('starts at level 1 Bronze and climbs', () => {
+    expect(levelFor(0)).toMatchObject({ level: 1, into: 0, need: 40 });
+    expect(levelFor(0).league.id).toBe('bronze');
+    expect(levelFor(40).level).toBe(2);
+    expect(levelFor(xpForLevel(5)).league.id).toBe('silver');
+    expect(levelFor(xpForLevel(10)).league.id).toBe('gold');
+    expect(levelFor(xpForLevel(16)).league.id).toBe('diamond');
+    expect(levelFor(xpForLevel(25)).league.id).toBe('legend');
+  });
+});
