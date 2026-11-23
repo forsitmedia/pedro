@@ -173,8 +173,10 @@ export interface MeInfo {
   sent: PlayerCard[];
   /** People you played with lately (not friends yet). */
   recent: PlayerCard[];
-  /** Real people online right now (not friends yet), to add. */
-  online: PlayerCard[];
+  /** Real people online right now (not friends yet), to add or invite. */
+  online: (PlayerCard & { status: FriendInfo['status'] })[];
+  /** The table you're sitting at (you can invite people to it). */
+  table?: string;
   /** Secret for your friend link: /f/<id>-<invite>. */
   invite: string;
   /** Your place in this week's ranking. */
@@ -230,6 +232,8 @@ export type LobbyMsg =
   | { t: 'invite'; id: string; from: PlayerCard | null }
   /** Players whose name matches what you typed. */
   | { t: 'search'; q: string; results: PlayerCard[] }
+  /** Someone (friend or not) asks you to sit at their table. */
+  | { t: 'play-invite'; from: PlayerCard; code: string; visibility: Visibility; key?: string }
   /** This browser's player id belongs to someone else: make a new one. */
   | { t: 'auth-fail' };
 
@@ -241,7 +245,11 @@ export type LobbyClientMsg =
   | { t: 'profile'; id: string }
   | { t: 'invite-accept'; id: string; token: string }
   | { t: 'friend-answer'; id: string; ok: boolean }
-  | { t: 'friend-remove'; id: string };
+  | { t: 'friend-remove'; id: string }
+  /** Ask this player (online, friend or not) to sit at the table you're at. */
+  | { t: 'play-invite'; to: string }
+  /** Answer to a table invite (no: the inviter is told). */
+  | { t: 'play-answer'; from: string; ok: boolean };
 
 /** Game results sent by a room to the lobby when a game ends. */
 export interface GameReport {

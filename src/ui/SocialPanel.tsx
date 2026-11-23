@@ -9,12 +9,14 @@ import { LevelChip, PlayerSheet } from './PlayerSheet';
 interface Props {
   /** Sit at a friend's table (private tables come with their key). */
   onJoin: (code: string, mode: Visibility, key?: string) => void;
+  /** Open a new table and ask this player (friend or not) to come and play. */
+  onInvite: (id: string) => void;
   ready: boolean;
   onNeedName: () => void;
 }
 
 /** Left column: your friends (who's online, join them) and this week's ranking. */
-export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
+export function SocialPanel({ onJoin, onInvite, ready, onNeedName }: Props) {
   const { me, board, notice } = useLobby();
   const [tab, setTab] = useState<'friends' | 'ranking'>('friends');
   const requests = me?.requests.length ?? 0;
@@ -39,7 +41,7 @@ export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
           to add friends and enter the ranking.
         </p>
       ) : tab === 'friends' ? (
-        <Friends onJoin={onJoin} notice={notice} onOpenPlayer={setOpenId} />
+        <Friends onJoin={onJoin} onInvite={onInvite} notice={notice} onOpenPlayer={setOpenId} />
       ) : (
         <Ranking board={board} myId={me?.id} myWeek={me?.week} onOpenPlayer={setOpenId} />
       )}
@@ -48,6 +50,10 @@ export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
           id={openId}
           friend={me?.friends.find((f) => f.id === openId)}
           onClose={() => setOpenId(null)}
+          onInvite={(id) => {
+            setOpenId(null);
+            onInvite(id);
+          }}
           onJoin={(code, mode, key) => {
             setOpenId(null);
             onJoin(code, mode, key);
@@ -62,10 +68,12 @@ export function SocialPanel({ onJoin, ready, onNeedName }: Props) {
 
 function Friends({
   onJoin,
+  onInvite,
   notice,
   onOpenPlayer,
 }: {
   onJoin: Props['onJoin'];
+  onInvite: Props['onInvite'];
   notice: { text: string; n: number } | null;
   onOpenPlayer: (id: string) => void;
 }) {
@@ -94,6 +102,9 @@ function Friends({
   const askedMe = new Set(me.requests.map((f) => f.id));
   const searching = q.trim().length >= 2;
   const results = searching && search?.q === q.trim() ? search.results : null;
+  const onlineById = new Map(me.online.map((p) => [p.id, p]));
+  const recentIds = new Set(me.recent.map((p) => p.id));
+  const onlineStrangers = me.online.filter((p) => !recentIds.has(p.id));
 
   return (
     <div className="friends">
@@ -170,7 +181,7 @@ function Friends({
           ) : (
             <ul className="people">
               {me.friends.map((f) => (
-                <FriendRow key={f.id} f={f} onJoin={onJoin} onOpen={() => onOpenPlayer(f.id)} />
+                <FriendRow key={f.id} f={f} onJoin={onJoin} onInvite={onInvite} onOpen={() => onOpenPlayer(f.id)} />
               ))}
             </ul>
           )}
@@ -194,25 +205,30 @@ function Friends({
             <>
               <h4 className="social-title">Played with recently</h4>
               <ul className="people">
-                {me.recent.map((p) => (
-                  <Person key={p.id} p={p}>
-                    <button className="mini-btn mini-btn--yes" onClick={() => addFriend(p.id)} aria-label={`Add ${p.name} as a friend`}>
-                      <Icon name="plus" size={16} />
-                    </button>
-                  </Person>
-                ))}
+                {me.recent.map((p) => {
+                  const live = onlineById.get(p.id);
+                  return (
+                    <Person key={p.id} p={p} status={live?.status} sub={live ? statusText(live.status) : undefined} onOpen={() => onOpenPlayer(p.id)}>
+                      {live && live.status !== 'playing' && <InviteButton name={p.name} onClick={() => onInvite(p.id)} />}
+                      <button className="mini-btn mini-btn--yes" onClick={() => addFriend(p.id)} aria-label={`Add ${p.name} as a friend`}>
+                        <Icon name="plus" size={16} />
+                      </button>
+                    </Person>
+                  );
+                })}
               </ul>
             </>
           )}
 
-          {me.online.length > 0 && (
+          {onlineStrangers.length > 0 && (
             <>
               <h4 className="social-title">
                 Online now <span className="muted">· real players</span>
               </h4>
               <ul className="people">
-                {me.online.map((p) => (
-                  <Person key={p.id} p={p} status="online">
+                {onlineStrangers.map((p) => (
+                  <Person key={p.id} p={p} status={p.status} sub={statusText(p.status)} onOpen={() => onOpenPlayer(p.id)}>
+                    {p.status !== 'playing' && <InviteButton name={p.name} onClick={() => onInvite(p.id)} />}
                     <button className="mini-btn mini-btn--yes" onClick={() => addFriend(p.id)} aria-label={`Add ${p.name} as a friend`}>
                       <Icon name="plus" size={16} />
                     </button>
@@ -300,15 +316,27 @@ function Person({
   );
 }
 
-function FriendRow({ f, onJoin, onOpen }: { f: FriendInfo; onJoin: Props['onJoin']; onOpen: () => void }) {
-  const sub =
-    f.status === 'playing'
-      ? `Playing${f.table?.round ? ` · round ${f.table.round}` : ''}`
-      : f.status === 'waiting'
-        ? 'At a table, waiting'
-        : f.status === 'online'
-          ? 'Online'
-          : 'Offline';
+function statusText(status: FriendInfo['status'], round?: number) {
+  return status === 'playing'
+    ? `Playing${round ? ` · round ${round}` : ''}`
+    : status === 'waiting'
+      ? 'At a table, waiting'
+      : status === 'online'
+        ? 'Online'
+        : 'Offline';
+}
+
+/** Ask someone online to come and play (opens a table for you both). */
+function InviteButton({ name, onClick }: { name: string; onClick: () => void }) {
+  return (
+    <button className="btn btn--small btn--invite" onClick={onClick} title={`Invite ${name} to play`} aria-label={`Invite ${name} to play`}>
+      Invite
+    </button>
+  );
+}
+
+function FriendRow({ f, onJoin, onInvite, onOpen }: { f: FriendInfo; onJoin: Props['onJoin']; onInvite: Props['onInvite']; onOpen: () => void }) {
+  const sub = statusText(f.status, f.table?.round);
   const canJoin = f.status === 'waiting' && f.table && f.table.visibility !== 'quick';
   return (
     <Person p={f} status={f.status} sub={sub} onOpen={onOpen}>
@@ -316,6 +344,8 @@ function FriendRow({ f, onJoin, onOpen }: { f: FriendInfo; onJoin: Props['onJoin
         <button className="btn btn--small btn--primary" onClick={() => onJoin(f.table!.code, f.table!.visibility, f.table!.key)}>
           Join
         </button>
+      ) : f.status === 'online' ? (
+        <InviteButton name={f.name} onClick={() => onInvite(f.id)} />
       ) : (
         <Icon name="chevron" size={16} className="person-chevron" />
       )}

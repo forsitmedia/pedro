@@ -50,12 +50,15 @@ export function PlayerSheet({
   friend,
   onClose,
   onJoin,
+  onInvite,
 }: {
   id: string;
   /** Set when they are your friend (status, table). */
   friend?: FriendInfo;
   onClose: () => void;
   onJoin?: (code: string, mode: Visibility, key?: string) => void;
+  /** Ask them to come and play (when they're online and not mid-game). */
+  onInvite?: (id: string) => void;
 }) {
   const { profile: loaded, me } = useLobby();
   const [confirm, setConfirm] = useState(false);
@@ -64,6 +67,10 @@ export function PlayerSheet({
   const p = loaded?.id === id ? loaded.profile : undefined;
   const isFriend = !!me?.friends.some((f) => f.id === id);
   const asked = !!me?.sent.some((f) => f.id === id);
+  // Online and free: friends from the friend list, anyone else from "online now".
+  const status = friend?.status ?? me?.online.find((o) => o.id === id)?.status;
+  const canJoin = friend?.status === 'waiting' && !!friend.table && friend.table.visibility !== 'quick' && !!onJoin;
+  const canInvite = !!onInvite && (status === 'online' || status === 'waiting') && !canJoin;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -87,13 +94,13 @@ export function PlayerSheet({
                     <Avatar code={avatarFor(p)} size="100%" />
                   </span>
                   <h2>{p.name}</h2>
-                  {friend && (
-                    <span className={`player-status player-status--${friend.status}`}>
-                      {friend.status === 'playing'
-                        ? `Playing${friend.table?.round ? ` · round ${friend.table.round}` : ''}`
-                        : friend.status === 'waiting'
+                  {status && (
+                    <span className={`player-status player-status--${status}`}>
+                      {status === 'playing'
+                        ? `Playing${friend?.table?.round ? ` · round ${friend.table.round}` : ''}`
+                        : status === 'waiting'
                           ? 'At a table, waiting'
-                          : friend.status === 'online'
+                          : status === 'online'
                             ? 'Online'
                             : 'Offline'}
                     </span>
@@ -101,9 +108,15 @@ export function PlayerSheet({
                 </div>
                 <LevelBar xp={p.xp} />
 
-                {friend?.status === 'waiting' && friend.table && friend.table.visibility !== 'quick' && onJoin && (
+                {canJoin && friend?.table && onJoin && (
                   <button className="btn btn--primary btn--big" onClick={() => onJoin(friend.table!.code, friend.table!.visibility, friend.table!.key)}>
                     Join {p.name}'s table
+                  </button>
+                )}
+
+                {canInvite && me?.id !== p.id && (
+                  <button className="btn btn--primary btn--big" onClick={() => onInvite!(p.id)}>
+                    Invite {p.name} to play
                   </button>
                 )}
 

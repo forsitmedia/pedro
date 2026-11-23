@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { getIdentity, resetIdentity } from './identity';
-import type { Board, LobbyClientMsg, LobbyMsg, LobbySnapshot, MeInfo, PlayerCard, PlayerProfile } from './protocol';
+import type { Board, LobbyClientMsg, LobbyMsg, LobbySnapshot, MeInfo, PlayerCard, PlayerProfile, Visibility } from './protocol';
+
+/** Someone asking you to sit at their table. */
+export interface PlayInvite {
+  from: PlayerCard;
+  code: string;
+  visibility: Visibility;
+  key?: string;
+  /** When it arrived (invites fade after a minute). */
+  at: number;
+}
 
 /**
  * Live connection to the lobby while the home page is open: players online, open tables,
@@ -18,9 +28,16 @@ export interface LobbyData {
   invite: { id: string; from: PlayerCard | null } | null;
   /** The last player card asked for. */
   profile: { id: string; profile: PlayerProfile | null } | null;
+  /** Table invites waiting for an answer (newest last). */
+  playInvites: PlayInvite[];
+  /** People you invited to your current table (to show "Invited ✓"). */
+  invited: string[];
 }
 
-let data: LobbyData = { lobby: null, me: null, board: null, notice: null, search: null, invite: null, profile: null };
+let data: LobbyData = { lobby: null, me: null, board: null, notice: null, search: null, invite: null, profile: null, playInvites: [], invited: [] };
+/** Invites to send as soon as the lobby sees you sitting at your new table. */
+let queued: { id: string; code: string; at: number }[] = [];
+const INVITE_TTL = 60_000;
 let ws: WebSocket | null = null;
 let users = 0;
 let retry = 0;
@@ -71,7 +88,15 @@ function connect() {
     }
     retry = 0;
     if (msg.t === 'lobby') update({ lobby: msg.lobby });
-    else if (msg.t === 'me') update({ me: msg.me });
+    else if (msg.t === 'me') {
+      // Left the table (or moved to another): the "Invited" marks start over.
+      const invited = msg.me.table && msg.me.table === data.me?.table ? data.invited : [];
+      update({ me: msg.me, invited });
+      flushQueued();
+    } else if (msg.t === 'play-invite') {
+      const rest = data.playInvites.filter((i) => i.from.id !== msg.from.id && Date.now() - i.at < INVITE_TTL);
+      update({ playInvites: [...rest, { from: msg.from, code: msg.code, visibility: msg.visibility, key: msg.key, at: Date.now() }] });
+    }
     else if (msg.t === 'board') update({ board: msg.board });
     else if (msg.t === 'profile') update({ profile: { id: msg.id, profile: msg.profile } });
     else if (msg.t === 'invite') update({ invite: { id: msg.id, from: msg.from } });
@@ -115,6 +140,39 @@ export const acceptInvite = (id: string, token: string) => send({ t: 'invite-acc
 export function friendLink(me: MeInfo): string {
   return `${location.origin}/f/${me.id}-${me.invite}`;
 }
+/** Ask someone online (friend or not) to sit at the table you're at. */
+export function invitePlayer(id: string) {
+  send({ t: 'play-invite', to: id });
+  if (!data.invited.includes(id)) update({ invited: [...data.invited, id] });
+}
+
+/** Invite someone to a table you're about to open: sent once the lobby sees you sitting there. */
+export function queueInvite(id: string, code: string) {
+  queued = [...queued.filter((q) => q.id !== id), { id, code, at: Date.now() }];
+  update({ invited: [] });
+}
+
+function flushQueued() {
+  if (!data.me?.table) return;
+  const now = Date.now();
+  const table = data.me.table;
+  const ids = queued.filter((q) => q.code === table && now - q.at < INVITE_TTL).map((q) => q.id);
+  queued = queued.filter((q) => q.code !== table && now - q.at < INVITE_TTL);
+  for (const id of ids) invitePlayer(id);
+}
+
+/** Yes (you're going to their table) or no (they're told you can't right now). */
+export function answerPlayInvite(inv: PlayInvite, ok: boolean) {
+  send({ t: 'play-answer', from: inv.from.id, ok });
+  update({ playInvites: data.playInvites.filter((i) => i !== inv) });
+}
+
+/** Forget invites that are too old to answer. */
+export function dropOldInvites() {
+  const fresh = data.playInvites.filter((i) => Date.now() - i.at < INVITE_TTL);
+  if (fresh.length !== data.playInvites.length) update({ playInvites: fresh });
+}
+
 export const answerFriend = (id: string, ok: boolean) => send({ t: 'friend-answer', id, ok });
 export const removeFriend = (id: string) => send({ t: 'friend-remove', id });
 

@@ -8,6 +8,7 @@ import { getProfile, useProfile } from './profile';
 import { Avatar, avatarFor } from './art/Avatar';
 import { Icon } from './art/Icon';
 import { VisibilityPicker } from './VisibilityPicker';
+import { InviteOnline } from './PlayInvites';
 
 interface Props {
   code: string;
@@ -263,6 +264,8 @@ function Room({ game, onExit }: { game: OnlineGame; onExit: () => void }) {
             {!room && <li className="muted">Connecting…</li>}
           </ul>
         </div>
+
+        {room && !quick && <InviteOnline code={game.code} />}
 
         {settings && !quick && (
           <fieldset className="settings" disabled={!isHost}>

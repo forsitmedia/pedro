@@ -4,7 +4,8 @@ import { LobbyPanel } from './LobbyPanel';
 import { SocialPanel } from './SocialPanel';
 import { InviteModal } from './InviteModal';
 import { MyLevel } from './PlayerSheet';
-import { setLobbyPlayer } from '../online/lobby';
+import { queueInvite, setLobbyPlayer, useLobby } from '../online/lobby';
+import { PlayInviteToasts } from './PlayInvites';
 import { OnlineRoom } from './OnlineRoom';
 import type { Difficulty } from '../bots/bot';
 import { LocalGame, type LocalSetup } from '../game/localGame';
@@ -85,6 +86,15 @@ export function App() {
     setRoom(null);
   };
   const [game, setGame] = useState<LocalGame | null>(null);
+  // The lobby stays connected everywhere, so people can invite you while you play the computer or wait at a table.
+  useLobby();
+  /** Go to a table from an invite (leaving a game against the computer). */
+  const joinTable = (code: string, mode: Visibility, key?: string) => {
+    saveSetup(setup);
+    game?.destroy();
+    setGame(null);
+    openRoom(code, true, mode, key);
+  };
   const [showRules, setShowRules] = useState(false);
   const [gameNo, setGameNo] = useState(0);
 
@@ -236,9 +246,13 @@ export function App() {
           <SocialPanel
             ready={!!name}
             onNeedName={() => setMaker('edit')}
-            onJoin={(code, mode, key) => {
+            onJoin={joinTable}
+            onInvite={(id) => {
+              // A friends-only table for you two; the invite goes out as soon as you're sitting there.
               saveSetup(setup);
-              openRoom(code, true, mode, key);
+              const code = newRoomCode();
+              queueInvite(id, code);
+              openRoom(code, true, 'private');
             }}
           />
           <LobbyPanel
@@ -265,6 +279,7 @@ export function App() {
       {maker && <AvatarMaker first={maker === 'first'} name={setup.playerName} onName={setName} onClose={() => setMaker(null)} />}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {showRules && <Rules onClose={() => setShowRules(false)} />}
+      {setup.playerName.trim() && <PlayInviteToasts currentRoom={room?.code} onJoin={joinTable} />}
       {invite && !room && !game && !maker && (
         <InviteModal id={invite.id} token={invite.token} ready={!!setup.playerName.trim()} onNeedName={() => setMaker('edit')} onClose={closeInvite} />
       )}

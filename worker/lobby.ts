@@ -29,6 +29,9 @@ const MAX_LISTED = 40;
 const MAX_FRIENDS = 100;
 const BOARD_SIZE = 20;
 const DAY = 86_400_000;
+/** Asking the same person again to play: wait a bit (longer after a "no"), so nobody gets spammed. */
+const INVITE_AGAIN_MS = 20_000;
+const INVITE_AFTER_NO_MS = 3 * 60_000;
 
 interface Attachment {
   /** Player id once the visitor said who they are. */
@@ -63,6 +66,8 @@ export class PedroLobby extends DurableObject<Env> {
   /** Quick-match codes just handed out, so two people pressing at once land together. */
   private quickClaims = new Map<string, { at: number; count: number }>();
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** "from>to" → when `from` may invite `to` to play again. */
+  private inviteWait = new Map<string, number>();
   private sql: SqlStorage;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -144,6 +149,15 @@ export class PedroLobby extends DurableObject<Env> {
       }
       case 'friend-answer':
         return this.answerFriend(me, String(msg.id), !!msg.ok);
+      case 'play-invite':
+        return this.playInvite(ws, me, String(msg.to ?? ''));
+      case 'play-answer': {
+        const from = String(msg.from ?? '');
+        if (msg.ok || !PLAYER_ID_RE.test(from)) return;
+        this.inviteWait.set(`${from}>${me}`, Date.now() + INVITE_AFTER_NO_MS);
+        const name = this.card(me)?.name ?? 'They';
+        return this.noticeTo(from, `${name} can't play right now.`);
+      }
       case 'friend-remove':
         this.sql.exec('DELETE FROM friends WHERE (a = ? AND b = ?) OR (a = ? AND b = ?)', me, msg.id, msg.id, me);
         return this.pushTo([me, String(msg.id)]);
@@ -253,6 +267,49 @@ export class PedroLobby extends DurableObject<Env> {
     const row = this.sql.exec<{ secret: string }>('SELECT secret FROM players WHERE id = ?', from).toArray()[0];
     if (!row || row.secret !== (await hash(String(secret).slice(0, 64)))) return 'Open the Pedro home page once to set up your profile.';
     return (await this.friendRequest(from, to)) ?? 'Nothing to do.';
+  }
+
+  /* ───────────── inviting people (friends or not) to your table ───────────── */
+
+  private async playInvite(ws: WebSocket, me: string, to: string) {
+    await this.load();
+    if (!PLAYER_ID_RE.test(to) || to === me) return;
+    const { online, tableOf } = this.presence();
+    const table = tableOf.get(me);
+    const them = this.card(to);
+    const say = (message: string) => this.send(ws, { t: 'notice', message });
+    if (!table || table.visibility === 'quick') return say('Sit at a table first, then invite people to it.');
+    if (table.started) return say('Your game already started — invite them to the next one.');
+    if (!them) return say("That player doesn't exist anymore.");
+    const theirs = tableOf.get(to);
+    if (theirs?.code === table.code) return say(`${them.name} is already at your table.`);
+    if (!online.has(to)) return say(`${them.name} isn't online right now.`);
+    if (theirs?.started) return say(`${them.name} is in the middle of a game.`);
+    const pair = `${me}>${to}`;
+    const now = Date.now();
+    if ((this.inviteWait.get(pair) ?? 0) > now) return say(`You already asked ${them.name} — give them a moment.`);
+    this.inviteWait.set(pair, now + INVITE_AGAIN_MS);
+    for (const [k, at] of this.inviteWait) if (at < now) this.inviteWait.delete(k);
+    const from = this.card(me);
+    if (!from) return;
+    const msg = JSON.stringify({
+      t: 'play-invite',
+      from,
+      code: table.code,
+      visibility: table.visibility,
+      key: table.visibility === 'private' ? this.keys?.get(table.code) : undefined,
+    } satisfies LobbyMsg);
+    for (const sock of this.ctx.getWebSockets()) {
+      if ((sock.deserializeAttachment() as Attachment | null)?.id === to) this.raw(sock, msg);
+    }
+    say(`Invite sent to ${them.name}!`);
+  }
+
+  private noticeTo(id: string, message: string) {
+    const msg = JSON.stringify({ t: 'notice', message } satisfies LobbyMsg);
+    for (const sock of this.ctx.getWebSockets()) {
+      if ((sock.deserializeAttachment() as Attachment | null)?.id === id) this.raw(sock, msg);
+    }
   }
 
   /* ───────────── friend links (/f/<id>-<token>) ───────────── */
@@ -405,7 +462,18 @@ export class PedroLobby extends DurableObject<Env> {
     if (pruned) await this.save();
     const list = [...tables.values()];
     const playing = list.reduce((n, t) => n + t.players.length, 0);
-    const visitors = this.ctx.getWebSockets().length;
+    // People at a table also keep the lobby open (to be invited / invite): count them once.
+    const atTables = new Set(list.flatMap((t) => t.players.map((p) => p.pid).filter(Boolean)));
+    const seen = new Set<string>();
+    let visitors = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      const id = (ws.deserializeAttachment() as Attachment | null)?.id;
+      if (!id) visitors++;
+      else if (!atTables.has(id) && !seen.has(id)) {
+        seen.add(id);
+        visitors++;
+      }
+    }
     // Waiting tables first (you can still sit down), then the busiest.
     list.sort((a, b) => Number(a.started) - Number(b.started) || b.players.length - a.players.length);
     return { online: visitors + playing, playing, tables: list.slice(0, MAX_LISTED) };
@@ -486,8 +554,8 @@ export class PedroLobby extends DurableObject<Env> {
       }
       return { ...f, status: online.has(f.id) ? 'online' : 'offline' };
     });
-    const order = { waiting: 0, playing: 1, online: 2, offline: 3 };
-    friends.sort((a, b) => order[a.status] - order[b.status]);
+    const friendOrder = { waiting: 0, playing: 1, online: 2, offline: 3 };
+    friends.sort((a, b) => friendOrder[a.status] - friendOrder[b.status]);
     const requests = cards("SELECT p.id, p.name, p.avatar FROM friends f JOIN players p ON p.id = f.a WHERE f.b = ? AND f.status = 'pending'");
     const sent = cards("SELECT p.id, p.name, p.avatar FROM friends f JOIN players p ON p.id = f.b WHERE f.a = ? AND f.status = 'pending'");
     const known = new Set([...friends, ...requests, ...sent].map((c) => c.id));
@@ -496,12 +564,22 @@ export class PedroLobby extends DurableObject<Env> {
       .slice(0, 6);
 
     // Real people around right now (people at tables first), to make friends with.
-    const others = [...new Set([...tableOf.keys(), ...online])].filter((p) => p !== id && !known.has(p) && !recent.some((r) => r.id === p));
+    const myTable = tableOf.get(id)?.code;
+    const others = [...new Set([...tableOf.keys(), ...online])].filter(
+      (p) => p !== id && !known.has(p) && (!myTable || tableOf.get(p)?.code !== myTable),
+    );
+    const statusOf = (p: string): FriendInfo['status'] => {
+      const t = tableOf.get(p);
+      return t ? (t.started ? 'playing' : 'waiting') : 'online';
+    };
+    const order = { waiting: 1, playing: 2, online: 0, offline: 3 };
     const onlineCards = others
       .slice(0, 30)
       .map((p) => this.card(p))
       .filter((c): c is PlayerCard => !!c && c.name !== 'Player')
-      .slice(0, 10);
+      .map((c) => ({ ...c, status: statusOf(c.id) }))
+      .sort((a, b) => order[a.status] - order[b.status])
+      .slice(0, 12);
 
     const { week } = weekOf(Date.now());
     const mine = this.sql.exec<{ points: number; wins: number; games: number }>('SELECT points, wins, games FROM weekly WHERE week = ? AND id = ?', week, id).toArray()[0];
@@ -510,7 +588,7 @@ export class PedroLobby extends DurableObject<Env> {
       mine && mine.games >= POINTS.minGames
         ? this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM weekly WHERE week = ? AND games >= ? AND points > ?', week, POINTS.minGames, mine.points).one().n + 1
         : null;
-    return { id, friends, requests, sent, recent, online: onlineCards, invite: this.inviteToken(id), total: this.totals(id), week: { rank, points: mine?.points ?? 0, wins: mine?.wins ?? 0, games: mine?.games ?? 0 } };
+    return { id, friends, requests, sent, recent, online: onlineCards, table: tableOf.get(id)?.code, invite: this.inviteToken(id), total: this.totals(id), week: { rank, points: mine?.points ?? 0, wins: mine?.wins ?? 0, games: mine?.games ?? 0 } };
   }
 
   /** Who's online and at which table, for the friends lists. */

@@ -5583,3 +5583,56 @@ html:has(.table) .alien-peek {
     opacity: 0;
   }
 }
+
+/* ───────────── table invites (from anyone online) ───────────── */
+.play-invites {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  width: min(420px, calc(100vw - 20px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.play-invite {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: #13281e;
+  border: 2px solid var(--accent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+  animation: request-in 0.35s ease-out;
+}
+.play-invite-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.play-invite-text b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.play-invite-text small {
+  color: var(--accent);
+  font-weight: 700;
+}
+.btn--invite {
+  flex: none;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+.invite-online .people {
+  max-height: 220px;
+}
+.invite-online .person .btn {
+  flex: none;
+}
