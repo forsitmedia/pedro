@@ -18,13 +18,18 @@ const COOLDOWN_MS = 1600;
 /** The four reaction buttons on the left side of the table. */
 export function ReactionBar({ onReact }: { onReact: (r: Reaction) => void }) {
   const [cooling, setCooling] = useState(false);
+  // On a phone the faces hide behind one button so they never cover the cards.
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!cooling) return;
     const t = setTimeout(() => setCooling(false), COOLDOWN_MS);
     return () => clearTimeout(t);
   }, [cooling]);
   return (
-    <div className={`reaction-bar ${cooling ? 'is-cooling' : ''}`} role="group" aria-label="Reactions">
+    <div className={`reaction-bar ${cooling ? 'is-cooling' : ''} ${open ? 'is-open' : ''}`} role="group" aria-label="Reactions">
+      <button className="reaction-toggle" aria-label={open ? 'Close reactions' : 'Reactions'} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? '×' : <ReactionFace mood="laugh" size="100%" />}
+      </button>
       {REACTIONS.map((r) => (
         <button
           key={r}
@@ -35,6 +40,7 @@ export function ReactionBar({ onReact }: { onReact: (r: Reaction) => void }) {
           onClick={() => {
             onReact(r);
             setCooling(true);
+            setOpen(false);
           }}
         >
           <ReactionFace mood={r} size="100%" />

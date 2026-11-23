@@ -3915,18 +3915,58 @@ html {
   opacity: 0.45;
   cursor: default;
 }
+.reaction-toggle {
+  display: none;
+}
 @media (max-width: 760px) {
+  /* Phone: one small face in the bottom-right corner; tap it to open the four reactions in a row. */
   .reaction-bar {
     top: auto;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    left: 8px;
+    left: auto;
+    right: calc(env(safe-area-inset-right) + 14px);
+    bottom: calc(env(safe-area-inset-bottom) + 16px);
     transform: none;
+    flex-direction: row-reverse;
+    align-items: center;
     gap: 6px;
-    padding: 6px;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .reaction-toggle {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: #fff;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    filter: drop-shadow(0 3px 0 #1a1206);
+  }
+  .reaction-bar.is-open .reaction-toggle {
+    background: rgba(255, 255, 255, 0.15);
+    filter: none;
   }
   .reaction-btn {
-    width: 36px;
-    height: 36px;
+    display: none;
+    width: 40px;
+    height: 40px;
+  }
+  .reaction-bar.is-open .reaction-btn {
+    display: block;
+  }
+  /* The power question takes the bottom of the screen: the reactions step aside. */
+  html:has(.actionbar .choice) .reaction-bar {
+    display: none;
+  }
+  /* Leave room at the very bottom so the floating button never sits on top of the last line. */
+  .table:has(.reaction-bar) .sidebar {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 80px);
   }
 }
 /* Keep the hand clear of the bar on desktop. */
@@ -5491,4 +5531,55 @@ html:has(.table) .alien-peek {
 
 .suit-red {
   color: #ff4d5e;
+}
+
+/* ───────────── phone: the power question pops up from the bottom ───────────── */
+@media (max-width: 760px) {
+  .seat-body > .actionbar:has(.choice) {
+    position: fixed;
+    left: calc(env(safe-area-inset-left) + 14px);
+    right: calc(env(safe-area-inset-right) + 14px);
+    bottom: calc(env(safe-area-inset-bottom) + 16px);
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);
+    overflow-y: auto;
+    z-index: 95;
+    margin: 0;
+    padding: 14px 14px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    background: #1d2a1f;
+    border: 3px solid var(--accent);
+    border-radius: 18px;
+    box-shadow: 0 -6px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(244, 196, 48, 0.35);
+    animation: choice-rise 0.25s cubic-bezier(0.2, 1.2, 0.4, 1);
+  }
+  .seat-body > .actionbar:has(.choice) .hint {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--accent);
+  }
+  .seat-body > .actionbar:has(.choice) .btn {
+    min-height: 52px;
+    font-size: 1.05rem;
+  }
+  .seat-body > .actionbar:has(.choice) .choice-row .btn {
+    min-height: 64px;
+    font-size: 1.2rem;
+  }
+  .seat-body > .actionbar:has(.choice) .choice-row .btn small {
+    font-size: 0.8rem;
+  }
+  .seat-body > .actionbar:has(.choice) .hint-toggle {
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+  }
+}
+@keyframes choice-rise {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
 }

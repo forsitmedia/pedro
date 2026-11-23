@@ -31,8 +31,49 @@ function audio(): AudioContext | null {
   return ctx;
 }
 
+/**
+ * iPhones mute Web Audio when the ring/silent switch is on, even with the volume up.
+ * Declaring the page a "playback" app (like a music player) makes it play anyway.
+ * Older iOS versions without that API get the same effect from a silent looping <audio>.
+ */
+let silentEl: HTMLAudioElement | null = null;
+function bypassSilentSwitch() {
+  const nav = navigator as Navigator & { audioSession?: { type: string } };
+  if (nav.audioSession) {
+    if (nav.audioSession.type !== 'playback') nav.audioSession.type = 'playback';
+    return;
+  }
+  if (silentEl || !/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+  // 0.1 s of silence as a WAV file, built in memory.
+  const rate = 8000;
+  const n = rate / 10;
+  const buf = new ArrayBuffer(44 + n);
+  const v = new DataView(buf);
+  const str = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF');
+  v.setUint32(4, 36 + n, true);
+  str(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true);
+  str(36, 'data');
+  v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  silentEl = new Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })));
+  silentEl.loop = true;
+  silentEl.setAttribute('playsinline', '');
+  void silentEl.play().catch(() => {
+    silentEl = null; // not a real tap yet: try again on the next one
+  });
+}
+
 if (typeof window !== 'undefined') {
   const unlock = () => {
+    bypassSilentSwitch();
     const a = audio();
     if (a && a.state !== 'running') void a.resume().then(syncMusic);
     else syncMusic();
@@ -41,11 +82,19 @@ if (typeof window !== 'undefined') {
   // Quiet when the tab is in the background.
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
-    if (document.visibilityState === 'hidden') void ctx.suspend();
+    if (document.visibilityState === 'hidden') {
+      void ctx.suspend();
+      silentEl?.pause();
+      return;
+    }
+    void silentEl?.play().catch(() => {});
     // Back on the page: pick up whatever music was chosen meanwhile.
-    else void ctx.resume().then(syncMusic, syncMusic);
+    void ctx.resume().then(syncMusic, syncMusic);
   });
   window.addEventListener('pointerdown', unlock, { capture: true });
+  // iOS only counts some events as a real tap for audio: touchend/click are the reliable ones.
+  window.addEventListener('touchend', unlock, { capture: true });
+  window.addEventListener('click', unlock, { capture: true });
   window.addEventListener('keydown', unlock, { capture: true });
 }
 
